@@ -1,0 +1,228 @@
+  /**
+    * Here we send in a number of combos which are yet to be colored
+    * We produce the adjacency lists directly on the cluster.
+    * BUG : When a Set is Empty, problems occur (of course).
+    */
+  def genadjlists(i: Long, step: Long, combos: RDD[(Array[Char], Long)],
+                         combosToColor: Array[(Array[Char], Long)], sc: SparkContext) =
+  {
+
+    //First step is to group every combo with every other combo to do a MapReduce.
+    val bcastdata = sc.broadcast(combosToColor)
+    //todo le faire avec mapPartitions, fold
+
+
+    //For every partition, we build a hash table of COMBO -> List of neighbors (all neighbors are strictly less than combo)
+    val r1 = combos.mapPartitions(partition => {
+      val hashtable = scala.collection.mutable.HashMap.empty[Long, Set[Long]]
+
+      partition.foreach(elem => {
+        val thisId = elem._2
+        val someCombos = bcastdata.value
+
+        // Si le ID du combo est plus haut que ceux des combos choisis, on fait aucun travail.
+        //println(s" haut if $thisId > $i + $step ")
+        if (thisId > i + step) {
+          val bbb = 2 //dummy statement for Scala
+        }
+        else {
+          var j = if ( thisId >= i)
+                (thisId - i ) .toInt//start the counter at 0
+          else 0
+          loop
+
+          def loop(): Unit = {
+
+            //Basic exit condition
+            if (j == someCombos.size) return
+
+            //If id of this general combo is lower than the combo to color, we can work
+            //println(s"if $thisId < $i + $j ")
+            if (thisId < i + j) {
+              val answer = isAdjacent(elem._1, someCombos(j)._1)
+              if (answer == true) {
+                 if (!hashtable.contains(i+j)) {
+                   hashtable(i+j) = Set(thisId)
+                 }
+                 else hashtable(i+j) += thisId
+              }
+            }
+            j += 1
+            loop
+          }
+        }
+      })
+     Iterator(hashtable )
+      //Return an iterator here
+    })
+
+    //Fuse the sets
+    val r2 = r1.fold( scala.collection.mutable.HashMap.empty[Long, Set[Long]])(
+      (acc, value) => {
+        value.foreach(elem => { //for each element of the other hashtable
+          val key= elem._1
+          val value= elem._2
+          if (acc.get(key).isEmpty) acc(key) = elem._2
+          else acc(key) ++= value
+        })
+        acc
+      }
+    )
+
+   val r3: Array[(Long, Array[Byte])] = r2.map(elem => {
+      val id = elem._1
+      val adjmatrix = new Array[Byte](id.toInt)
+
+      elem._2.foreach( id => {
+        adjmatrix(id.toInt) = 1
+      })
+
+      (id, adjmatrix)
+    }).toArray.sortBy(_._1)
+
+    //Return the sorted adjacency list, to be used by the order colouring algorithm.
+    println(s"Printing the adjmatrix for $i")
+    r3.foreach( e => {
+      print(e._1 + " ")
+      e._2.foreach( b => print(b))
+      print("\n")
+    })
+
+    r3
+
+  }
+
+
+
+
+
+
+//Filter the vertices that were just colored
+//Use broadcast variable here
+//        val justColored_bcast = sc.broadcast(results.map(e => e._1))
+//        rdd = rdd.filter(elem =>
+//        {
+//          val tab = justColored_bcast.value
+//          val thisId = elem._1
+//          var aMatch = false
+//
+//          loop(0)
+//          def loop(i: Int): Unit =
+//          {
+//            if (i == tab.size) return
+//            if (tab(i) == thisId)  {
+//              aMatch = true
+//              return
+//            }
+//              loop(i + 1)
+//          }
+//          !aMatch
+//        })
+
+//            //Check for better peasants...
+//            while (i != thisId && betterPeasant == true) {
+//              val a = adjlist(i)
+//              val itscolor = colors(i)
+//              if (a == 1 && itscolor == 0) {
+//                betterPeasant = true //Unfortunately, there is a better peasant
+//              }
+//              i += 1
+//            }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  //    val r1 = combos.flatMap( elem =>
+  //    {
+  //       val results = new ArrayBuffer[(Long,Long)]()
+  //       val thisId = elem._2
+  //       val someCombos = bcastdata.value
+  //
+  //        //Si le ID du combo est plus haut que ceux des combos choisis, on fait aucun travail.
+  //        if (thisId> i+step) {
+  //          val bbb = 2
+  //        }
+  //        else {
+  //          var j = 0 //start the counter at 0
+  //          loop
+  //          def loop(): Unit = {
+  //
+  //            //Basic exit condition
+  //            if (j == someCombos.size) return
+  //
+  //            //If id of this general combo is lower than the combo to color, we can work
+  //            if (thisId < i+j ) {
+  //              val answer = isAdjacent(elem._1, someCombos(j)._1)
+  //              if (answer == true)
+  //              {
+  //                results += Tuple2(i+j, thisId)
+  //              }
+  //            }
+  //
+  //            j+=1
+  //            loop
+  //          }
+  //
+  //        }
+  //      results
+  //    })
+
+
+  //  def ordercoloring(n: Int, t: Int, v: Int, sc: SparkContext, step : Int): Array[Array[Char]] =
+  //  {
+  //
+  //    val expected = utils.numberTWAYCombos(n, t, v)
+  //    println("Progressive Order Coloring for clusters")
+  //    println(s"Speed of covering : $step")
+  //    println(s"Problem : n=$n,t=$t,v=$v")
+  //    println(s"Expected number of combinations is : $expected ")
+  //    println(s"Formula is C($n,$t) * $v^$t")
+  //
+  //    var t1 = System.nanoTime()
+  //
+  //    import java.io._
+  //    val pw = new PrintWriter(new FileOutputStream(filename, true))
+  //
+  //    //Step 1 : Cover t parameters
+  //    val steps = generate_all_steps(n, t)
+  //    val r1 = sc.makeRDD(steps) //Parallelize the steps
+  //    val r2 = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
+  //    var testsRDD = r2.flatMap(pv => generate_vc(pv, t, v))
+  //
+  //    var t2 = System.nanoTime()
+  //    var time_elapsed = (t2 - t1).toDouble / 1000000000
+  //    println(s"Generation time : $time_elapsed seconds")
+  //
+  //    t1 = System.nanoTime()
+  //    //var tests = toColoring(testsRDD, sc, v, "ST")
+  //    var tests = orderColoring(numberProcessors, testsRDD.collect(), sc)
+  //    //var tests = parallelLittleColoring(numberProcessors, testsRDD.collect(), sc)
+  //
+  //    t2 = System.nanoTime()
+  //
+  //    time_elapsed = (t2 - t1).toDouble / 1000000000
+  //    println(s"SIMPLE COLORING TIME : $time_elapsed seconds")
+  //
+  //    //Record the results into the file in append mode
+  //    pw.append(s"$t;${n};$v;STCOLORING;$time_elapsed;${tests.size}\n")
+  //    println(s"$t;${n};$v;STCOLORING;$time_elapsed;${tests.size}\n")  //print it too
+  //    pw.flush()
+  //
+  //    tests
+  //  }
+  //
