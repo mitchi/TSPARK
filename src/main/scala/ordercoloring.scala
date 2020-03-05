@@ -1,7 +1,7 @@
 package ordercoloring
 
 import enumerator.distributed_enumerator.{generate_all_steps, generate_from_step, generate_vc}
-import generator.gen.filename
+import central.gen.filename
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import utils.utils

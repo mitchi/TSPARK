@@ -2,7 +2,7 @@ package ipog
 
 import cmdline.resume_info
 import enumerator.distributed_enumerator.{fastGenCombos, genPartialCombos}
-import generator.gen._
+import central.gen._
 import org.apache.spark.SparkContext
 import org.apache.spark.storage.StorageLevel
 import utils.utils.saveTestSuite
@@ -69,7 +69,7 @@ object d_ipog_coloring {
 
       //Apply horizontal growth
       // val r1 = setcover_m_progressive(tests, newCombos, v, t, sc)
-      val r1 = horizontalgrowth_1percent(tests, newCombos, v, t, sc, hstep)
+      val r1 = horizontalgrowthfinal(tests, newCombos, v, t, sc, hstep)
 
       newCombos = r1._2 //Retrieve the combos that are not covered
       tests = r1._1 //Replace the tests

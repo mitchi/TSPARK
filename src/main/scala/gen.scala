@@ -75,23 +75,14 @@
   *
   */
 
-package generator
+package central
 
-import cmdline.resume_info
-import generator.gen.filename
 import ordercoloring.OrderColoring.orderColoring
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
-
 import scala.collection.mutable.ArrayBuffer
 import setcover.Algorithm2._
-
-import scala.annotation.tailrec
-import scala.util.Random
-import org.apache.spark.storage.StorageLevel
-
-import scala.collection.mutable
 import scala.io.Source
 //Import all enumerator functions
 import enumerator.distributed_enumerator._
@@ -133,13 +124,11 @@ object gen extends Serializable {
 
   import utils._
 
-
   //Helpful global vars
   var save = false
   var debug = false
   var writeToFile = true //Write the results to a file
   var filename = "results.txt"
-
 
   /**
     * Compare two arrays. One array is a combo, and the other is a test
@@ -539,215 +528,6 @@ object gen extends Serializable {
     coloredTests ++ testsWithoutStars
   }
 
-  /**
-    * Not an adapative version of M. We always aim to do 100 iterations of horizontal growth
-    * We calculate the M value using 1% of the test size.
-    * We can also receive a M value by parameter.
-    *
-    * @param tests
-    * @param combos
-    * @param v
-    * @param t
-    * @param sc
-    * @return
-    */
-  def horizontalgrowth_1percent(tests: Array[Array[Char]], combos: RDD[Array[Char]], v: Int,
-                                t: Int, sc: SparkContext, hstep: Int = -1):
-  (Array[Array[Char]], RDD[Array[Char]]) = {
-    //Take our test suite and broadcast it.
-
-    var bestTests2 = new ArrayBuffer[Array[Char]]()
-    var remainingElements = false
-
-    case class element(var test: Int, version: Char)
-    case class comboEntry(var combo: Array[Char], var list: ArrayBuffer[element])
-
-    var newCombos = combos
-
-    //Start M at 1% of total test size
-    var m = tests.size / 100
-    if (m < 1) m = 1
-    var i = 0 //for each test
-
-    //Set the M value from the static value if there was one provided.
-    if (hstep != -1) m = hstep
-
-    loop2 //go into the main loop
-    def loop2(): Unit = {
-
-      println(s"value of M : $m for value of i =  $i")
-
-      //Exit condition of the loop
-      if (i >= tests.length) {
-        remainingElements = false
-        return
-      }
-
-      //Pick the M next tests
-      var someTests = takeM(tests, m, i)
-      if (someTests.size < m) m = someTests.size
-
-      //Broadcast the tests
-      val someTests_bcast = sc.broadcast(someTests)
-
-      case class key_v(var test: Int, version: Char)
-
-      val s1 = newCombos.mapPartitions(partition => {
-        var hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
-        partition.foreach(combo => {
-          //Create the list on the fly for the element. This will save memory
-          val someTests = someTests_bcast.value
-          //Get the version of the combo
-          var list = new ArrayBuffer[element]()
-          val c = combo(0)
-
-          //Create a small list
-          for (j <- 0 until someTests.size) {
-            val answer = isComboHere2(combo, someTests(j), t)
-            if (answer == true) { //if true, we add this version to the possible tests
-              list += element(j, c)
-            }
-          }
-
-          //Put the list inside the hash table
-          list.foreach(elem => {
-            val test = elem.test
-            if (test != -1) { //ignore
-              val key = key_v(test, elem.version)
-              if (hashmappp.get(key).isEmpty) //if entry is empty
-                hashmappp.put(key, 1)
-              else {
-                hashmappp(key) += 1
-              }
-            }
-          })
-        })
-        Iterator(hashmappp)
-      })
-
-      //Unpersist it right away
-      someTests_bcast.unpersist(false)
-
-      //Fold would be better here
-      //Voir le StackOverflow pour merge des maps https://stackoverflow.com/questions/7076128/best-way-to-merge-two-maps-and-sum-the-values-of-same-key
-      var res = s1.fold(mutable.HashMap.empty[key_v, Int])(
-        (acc, values) => {
-          values.foreach(elem => { //for each element of a
-            val key: key_v = elem._1
-            val value = elem._2
-            if (acc.get(key).isEmpty) acc(key) = elem._2
-            else acc(key) += value
-          })
-          acc
-        })
-
-      //When our M tests do not cover any combos, we still need to add the tests, but we add them with a star. The graph coloring
-      //Will have to take care of it later.
-      if (res.isEmpty == true) {
-        for (i <- 0 until someTests.size) {
-          val meat = someTests(i)
-          val newTest = growby1(meat, '*')
-          bestTests2 += newTest
-        }
-
-        remainingElements = true
-        return
-      }
-
-      //Find the best test inside the hashtable.
-      var bestTests = new ArrayBuffer[bestT]() //initiate array of size m. Index of array is the test.
-      //Init that array
-      for (k <- 0 until m) {
-        bestTests += bestT()
-      }
-
-      //Find the best versions for each test, from the merged hash table
-      res.toSeq.foreach(elem => {
-        val i: Int = elem._1.test
-        val count = elem._2
-        val version = elem._1.version
-        if (count > bestTests(i).count) {
-          bestTests(i).count = count
-          bestTests(i).version = version
-        }
-      })
-
-      //Assemble the final test using the original test and the version
-      for (i <- 0 until bestTests.size) {
-        val meat = someTests(i)
-        val newTest = growby1(meat, bestTests(i).version)
-        bestTests2 += newTest
-      }
-
-      //Broadcast the tests to delete
-      val testsToDelete_bcast = sc.broadcast(bestTests)
-
-      //Filter the combos that are covered by this test we just chose
-      //A combo stores the test, and version that covers it.
-      newCombos = newCombos.flatMap(combo => {
-        val testsToDelete = testsToDelete_bcast.value
-
-        var delete = false
-        var j = 0
-
-        var list = new ArrayBuffer[element]()
-        val c = combo(0)
-
-        //Create a small list
-        for (j <- 0 until someTests.size) {
-          val answer = isComboHere2(combo, someTests(j), t)
-          if (answer == true) { //if true, we add this version to the possible tests
-            list += element(j, c)
-          }
-        }
-
-
-        loop4
-
-        def loop4(): Unit = {
-          if (j == list.length) //end of list condition
-            return
-          val list_elem = list(j)
-          if (list_elem.test != -1 && testsToDelete(list_elem.test).version == list_elem.version) {
-            delete = true
-            return
-          }
-          j += 1
-          loop4
-        }
-
-        if (delete == true)
-          None
-        else Some(combo)
-      }).persist(StorageLevel.MEMORY_AND_DISK)
-
-      //Unpersist right away
-      testsToDelete_bcast.unpersist(false)
-
-      //  if (i % 3 == 0) //seems to give better performance
-      newCombos = newCombos.localCheckpoint()
-
-      i += m //move m by 2
-
-      loop2
-    }
-
-    loop3 //go into the loop for the first time.
-    //We use this loop to finish extending the tests
-    def loop3(): Unit = {
-      if (remainingElements == false) return //get out of this loop right away if we have finished properly.
-      i += m //increment to the next test
-      loop2 //call the main loop to finish another test
-
-      ////////////////////////////
-      loop3
-    }
-
-    //Now we return the results, and also the uncovered combos.
-    (bestTests2.toArray, newCombos)
-
-  } //fin fonction horizontal growth 1 percent old
-
 
   /**
     * Version finale. Mise au propre pas mal
@@ -825,8 +605,12 @@ object gen extends Serializable {
       //Unpersist the broadcast variable
       someTests_bcast.unpersist(false)
 
+      //TODO: Optimize this part
+
       //Final aggregation of the counts using reduceByKey
       var res = s1.flatMap(hash => hash.toSeq).reduceByKey((a, b) => a + b)
+
+      //This part should be done on a local machine for speed.
 
       //Find the best version of the tests
       val res2 = res.map(e => Tuple2(e._1.test, (e._1.version, e._2))).reduceByKey((a, b) => {
@@ -848,7 +632,6 @@ object gen extends Serializable {
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {
         var found = false
-
         loop
 
         def loop(): Unit = {
@@ -877,179 +660,6 @@ object gen extends Serializable {
     //Now we return the results, and also the uncovered combos.
     (finalTests.toArray, newCombos)
   } //fin fonction horizontal growth 1 percent old
-
-
-  /**
-    * Not an adapative version of M. We always aim to do 100 iterations of horizontal growth
-    * We calculate the M value using 1% of the test size.
-    * We can also receive a M value by parameter.
-    *
-    * @param tests
-    * @param combos
-    * @param v
-    * @param t
-    * @param sc
-    * @return
-    */
-  def horizontalgrowth_1percent_wip(tests: Array[Array[Char]], combos: RDD[Array[Char]], v: Int,
-                                    t: Int, sc: SparkContext, hstep: Int = -1):
-  (Array[Array[Char]], RDD[Array[Char]]) = {
-    //Take our test suite and broadcast it.
-    var bestTests2 = new ArrayBuffer[Array[Char]]() //the tests we return
-    var remainingElements = false
-
-    case class element(var test: Int, version: Char)
-    case class comboEntry(var combo: Array[Char], var list: ArrayBuffer[element])
-
-    var newCombos = combos
-
-    //Start M at 1% of total test size
-    var m = tests.size / 100
-    if (m < 1) m = 1
-    var i = 0 //for each test
-
-    //Set the M value from the static value if there was one provided.
-    if (hstep != -1) m = hstep
-
-    //Todo : Creer plus de partitions ici
-
-    loop2 //go into the main loop
-    def loop2(): Unit = {
-
-      println(s"value of M : $m for value of i =  $i")
-
-      //Exit condition of the loop
-      if (i >= tests.length) {
-        remainingElements = false
-        return
-      }
-
-      //Pick the M next tests
-      var someTests = takeM(tests, m, i)
-      if (someTests.size < m) m = someTests.size
-
-      //Broadcast the tests
-      val someTests_bcast = sc.broadcast(someTests)
-
-      case class key_v(var test: Int, version: Char)
-
-      val s1 = newCombos.mapPartitions(partition => {
-        var hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
-        partition.foreach(combo => {
-          //Create the list on the fly for the element. This will save memory
-          val someTests = someTests_bcast.value
-          //Get the version of the combo
-          var list = new ArrayBuffer[element]()
-          val c = combo(0)
-
-          //Create a small list
-          for (j <- 0 until someTests.size) {
-            val answer = isComboHere2(combo, someTests(j), t)
-            if (answer == true) { //if true, we add this version to the possible tests
-              list += element(j, c)
-            }
-          }
-
-          //Put the list inside the hash table
-          list.foreach(elem => {
-            val test = elem.test
-            if (test != -1) { //ignore
-              val key = key_v(test, elem.version)
-              if (hashmappp.get(key).isEmpty) //if entry is empty
-                hashmappp.put(key, 1)
-              else {
-                hashmappp(key) += 1
-              }
-            }
-          })
-        })
-        Iterator(hashmappp)
-      })
-
-      //Unpersist it right away
-      someTests_bcast.unpersist(false)
-
-      //Fold would be better here
-      //Voir le StackOverflow pour merge des maps https://stackoverflow.com/questions/7076128/best-way-to-merge-two-maps-and-sum-the-values-of-same-key
-      var res = s1.fold(mutable.HashMap.empty[key_v, Int])(
-        (acc, values) => {
-          values.foreach(elem => { //for each element of a
-            val key: key_v = elem._1
-            val value = elem._2
-            if (acc.get(key).isEmpty) acc(key) = elem._2
-            else acc(key) += value
-          })
-          acc
-        })
-
-      //When our M tests do not cover any combos, we still need to add the tests, but we add them with a star. The graph coloring
-      //Will have to take care of it later.
-      if (res.isEmpty == true) {
-        for (i <- 0 until someTests.size) {
-          val meat = someTests(i)
-          val newTest = growby1(meat, '*')
-          bestTests2 += newTest
-        }
-
-        remainingElements = true
-        return
-      }
-
-      //Find the best test inside the hashtable.
-      var bestTests = new ArrayBuffer[bestT]() //initiate array of size m. Index of array is the test.
-      //Init that array
-      for (k <- 0 until m) {
-        bestTests += bestT()
-      }
-
-      //Find the best versions for each test, from the merged hash table
-      res.toSeq.foreach(elem => {
-        val i: Int = elem._1.test
-        val count = elem._2
-        val version = elem._1.version
-        if (count > bestTests(i).count) {
-          bestTests(i).count = count
-          bestTests(i).version = version
-        }
-      })
-
-      var testsToDelete = new ArrayBuffer[Array[Char]]()
-
-      //Assemble the final test using the original test and the version
-      for (i <- 0 until bestTests.size) {
-        val meat = someTests(i)
-        val newTest = growby1(meat, bestTests(i).version)
-        testsToDelete += newTest
-        bestTests2 += newTest
-      }
-
-      println("Printing the tests to delete")
-      testsToDelete.foreach(print_helper(_))
-
-      //Cover combos with these tests
-      progressive_filter_combo(testsToDelete.toArray, newCombos, sc)
-
-      newCombos = newCombos.localCheckpoint()
-      i += m //move m by 2
-
-      loop2
-    }
-
-    loop3 //go into the loop for the first time.
-    //We use this loop to finish extending the tests
-    def loop3(): Unit = {
-      if (remainingElements == false) return //get out of this loop right away if we have finished properly.
-      i += m //increment to the next test
-      loop2 //call the main loop to finish another test
-
-      ////////////////////////////
-      loop3
-    }
-
-    //Now we return the results, and also the uncovered combos.
-    (bestTests2.toArray, newCombos)
-
-  } //fin fonction horizontal growth 1 percent
 
 
   /**
@@ -1385,7 +995,6 @@ object test3 extends App {
 
   // println("\n\nVerifying test suite ... ")
   //  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
-
 
   //
   //        var remainingCombos = progressive_filter_combo(tests, fastGenCombos(n,t,v,sc), sc)

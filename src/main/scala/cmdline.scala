@@ -8,7 +8,7 @@ case class resume_info(var tests: Array[Array[Char]], var param: Int)
 
 object MainConsole {
 
-  import generator.gen._
+  import central.gen._
   import utils.utils._
 
   val SPARKVERSION = "2.4.4"
