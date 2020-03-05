@@ -1,10 +1,8 @@
 package enumerator
 
-import generator.{_step, utils}
-import generator.utils.print_helper
+import generator.{_step}
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-
 import scala.collection.mutable.ArrayBuffer
 
 /**
@@ -13,6 +11,7 @@ import scala.collection.mutable.ArrayBuffer
   * By using Buffer[Char] instead of Array[Char], we can use Arrays as keys in Apache Spark
   */
 
+import utils.utils._
 
 object distributed_enumerator extends Serializable {
 
@@ -384,7 +383,7 @@ object distributed_enumerator extends Serializable {
       println("\nPrinting all the steps :")
       steps.foreach(s => print(s))
     }
-    val expected = utils.numberParamVectors(n, t)
+    val expected = numberParamVectors(n, t)
 
     val r1 = sc.makeRDD(steps) //Parallelize the steps
     val r2: RDD[Array[Char]] = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
@@ -456,7 +455,7 @@ object distributed_enumerator extends Serializable {
     val r2 = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
     val r3 = r2.flatMap(pv => generate_vc(pv, t, v))
 
-    val expected = utils.numberTWAYCombos(n, t, v)
+    val expected = numberTWAYCombos(n, t, v)
 
     println(s"Expected number of combinations is : $expected ")
 

@@ -266,55 +266,10 @@ object OrderColoring {
       None
     }
 
-    /**
-      * This is a sequential coloring algorithm. It is extremely quick, which makes me a bit sad.
-      * Algorithm :
-      * ->Generate combos.
-      * ->Combos to Graph Coloring
-      * ->Generate a random coloring sequence.
-      * ->Color the sequence in a single while loop
-      * ->Return the graph in the following format (color, original combo text)
-      */
-    def singlethreadcoloring(n: Int, t: Int, v: Int, sc: SparkContext, numberProcessors: Int = 6): Array[Array[Char]] = {
 
-      val expected = utils.numberTWAYCombos(n, t, v)
-      println("Graph Coloring single thread (Order Coloring)")
-      println(s"Number of parallel graph colorings : $numberProcessors")
-      println(s"Problem : n=$n,t=$t,v=$v")
-      println(s"Expected number of combinations is : $expected ")
-      println(s"Formula is C($n,$t) * $v^$t")
+  } //fin merge tests
 
-      var t1 = System.nanoTime()
 
-      import java.io._
-      val pw = new PrintWriter(new FileOutputStream(filename, true))
-
-      //Step 1 : Cover t parameters
-      val steps = generate_all_steps(n, t)
-      val r1 = sc.makeRDD(steps) //Parallelize the steps
-      val r2 = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
-      var testsRDD = r2.flatMap(pv => generate_vc(pv, t, v)).cache() //Generate the tway combos
-
-      var t2 = System.nanoTime()
-      var time_elapsed = (t2 - t1).toDouble / 1000000000
-      println(s"Generation time : $time_elapsed seconds")
-
-      t1 = System.nanoTime()
-      var tests = orderColoring(numberProcessors, testsRDD.collect(), sc)
-
-      t2 = System.nanoTime()
-
-      time_elapsed = (t2 - t1).toDouble / 1000000000
-      println(s"SIMPLE COLORING TIME : $time_elapsed seconds")
-
-      //Record the results into the file in append mode
-      pw.append(s"$t;${n};$v;STCOLORING;$time_elapsed;${tests.size}\n")
-      println(s"$t;${n};$v;STCOLORING;$time_elapsed;${tests.size}\n") //print it too
-      pw.flush()
-
-      tests
-    }
-  }
 
 }
 

@@ -2,22 +2,19 @@ package cmdline
 
 import org.apache.spark.{SparkConf, SparkContext}
 import enumerator.distributed_enumerator._
+import ipog.d_ipog_coloring._
 
 case class resume_info(var tests: Array[Array[Char]], var param: Int)
 
 object MainConsole {
 
-  import generator.utils.print_helper
   import generator.gen._
+  import utils.utils._
 
   val SPARKVERSION = "2.4.4"
   val VERSION = "1.0.0"
   val HEADER = s"TSPARK $VERSION (c) 2019 Edmond LA CHANCE. Developped using Spark Version : $SPARKVERSION"
   val FOOTER = "See results.txt file. For all other tricks, consult the documentation"
-
-  //Desactiver les messages de Apache Spark
-  // Logger.getLogger("org").setLevel(Level.OFF)
-  //Logger.getLogger("akka").setLevel(Level.OFF)
 
   def readSeeding(s: String): resume_info = {
     var res = s.split(",")
@@ -25,7 +22,6 @@ object MainConsole {
     var filename = res(1)
     resume_info(readTestSuite(filename), targetParam)
   }
-
 
   def main(args: Array[String]): Unit = {
 
@@ -44,34 +40,7 @@ object MainConsole {
       System.exit(0)
     }
 
-    //    else {
-    //      val map_parameters = {
-    //        if (args(0).startsWith("@")) {
-    //          println("Read config file")
-    //          val argsFile = configFile2args(args(0).replace("@", ""))
-    //
-    //          if (argsFile.isDefined) {
-    //            args2maps(argsFile.get)
-    //          }
-    //          else {
-    //            println("Config file does not exists, please check path")
-    //            System.exit(-1)
-    //            null
-    //          }
-    //
-    //        }
-    //        else {
-    //          args2maps(args)
-    //        }
-    //      }
-
     val map_parameters = args2maps(args)
-
-    //Handle graphviz files
-    //    if (args.contains("--graphviz")) {
-    //      colorGraphViz()
-    //      System.exit(0)
-    //    }
 
     //Support for covering EDN hypergraphs
     if (args.contains("--edn")) {
@@ -90,17 +59,6 @@ object MainConsole {
       System.exit(0)
     }
 
-    if (args.contains("--all")) {
-      tryRunAllAlgorithms(map_parameters)
-      System.exit(0)
-    }
-
-    //Checking for a test suite
-    if (args.contains("--ts")) {
-      tryRunTestSuite(map_parameters)
-      System.exit(0)
-    }
-
     val algo_type = map_parameters("type")
 
     algo_type match {
@@ -108,13 +66,10 @@ object MainConsole {
       case "tway" => tryGenerateVC(map_parameters)
       case "combos" => printCombosInOrder(map_parameters)
       case "hypergraphcover" => tryGenerateSETCOVER(map_parameters)
-      //case "kpcoloring" => tryGenerateKP(map_parameters)
-      //case "ipogcoloring" => tryGenerateIPOGCOLORING(map_parameters)
+      case "graphcoloring" => tryGenerateColoring(map_parameters) //Distributed Graph Coloring
       case "ordercoloring" => tryGenerateSIMPLECOLORING(map_parameters)
-      case "parallel_ipog" => tryGenerateParallelIPOG(map_parameters)
-      case "distributed_ipog_coloring" => tryGenerateParallelIPOGM(map_parameters)
-      case "distributed_ipog_hypergraph" => parallel_ipog_m_setcover(map_parameters)
-      case "graphcoloring" => tryGenerateColoring(map_parameters)
+      case "distributed_ipog_coloring" => handle_distributed_ipog_coloring(map_parameters)
+      case "distributed_ipog_hypergraph" => handle_distributed_ipog_hypergraph(map_parameters)
       case _ => println("Output type unknown, please check --type parameter")
     }
   }
@@ -464,7 +419,6 @@ object MainConsole {
         System.exit(1)
       }
 
-      //val tests  = progressivecoloring_final( fastGenCombos(n,t,v,sc), sc, graphsize, algorithm) //4000 pour 100 2 2
       val tests = distributed_graphcoloring(n, t, v, sc, memory, algorithm)
 
 
@@ -483,109 +437,7 @@ object MainConsole {
 
 
   /**
-    *
-    * @param params
-    */
-  def tryGenerateKP(params: Map[String, String]): Unit = {
-
-    try {
-      val t = params("t").toInt
-      val n = params("n").toInt
-      val v = params("v").toInt
-
-      var checkpointdir = "/"
-
-      var file = ""
-
-      var print = "true"
-
-      if (params.contains("checkpointdir")) {
-        checkpointdir = params("checkpointdir")
-      }
-
-      if (params.contains("file")) {
-        file = params("file")
-      }
-
-      if (params.contains("print")) {
-        print = params("print")
-      }
-
-      val conf = new SparkConf().setMaster("local[*]").setAppName("K&P COLORING").set("spark.driver.maxResultSize", "0")
-        .set("spark.checkpoint.compress", "true")
-      val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
-      sc.setLogLevel("OFF")
-
-      val tests = graphcoloring(n, t, v, sc)
-
-      //Print the tests
-      println(s"Printing the ${tests.size} tests")
-      tests.foreach(print_helper(_))
-    }
-
-    catch {
-      case e: Exception => {
-        println("Parsing for Coloring, please verify the command")
-        println("Type --help for more info")
-      }
-    }
-
-  } //end trygeneratehybridipog
-
-  /*
-  IPOG COLORING with random horizontal growth
-   */
-  def tryGenerateIPOGCOLORING(params: Map[String, String]): Unit = {
-
-    try {
-      val t = params("t").toInt
-      val n = params("n").toInt
-      val v = params("v").toInt
-
-      var checkpointdir = "/"
-
-      var file = ""
-
-      var print = "true"
-
-      if (params.contains("checkpointdir")) {
-        checkpointdir = params("checkpointdir")
-      }
-
-      if (params.contains("file")) {
-        file = params("file")
-      }
-
-      if (params.contains("print")) {
-        print = params("print")
-      }
-
-      val conf = new SparkConf().setMaster("local[*]").setAppName("IPOG COLORING RANDOM HORIZONTAL EXTENSION").set("spark.driver.maxResultSize", "0")
-        .set("spark.checkpoint.compress", "true")
-      val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
-      sc.setLogLevel("OFF")
-
-      val tests = ipogcoloring(n, t, v, sc)
-
-      //Print the tests
-      println(s"Printing the ${tests.size} tests")
-      tests.foreach(print_helper(_))
-
-    }
-
-    catch {
-      case e: Exception => {
-        println(e.getMessage)
-        println("Parsing for Coloring, please verify the command")
-        println("Type --help for more info")
-      }
-    }
-
-  }
-
-
-  /*
-   Single thread coloring
+    * Single thread coloring using the Order Coloring algorithm
     */
   def tryGenerateSIMPLECOLORING(params: Map[String, String]): Unit = {
 
@@ -639,66 +491,11 @@ object MainConsole {
     }
   }
 
-  /*
-  Parallel IPOG
-   */
-  def tryGenerateParallelIPOG(params: Map[String, String]): Unit = {
-
-    try {
-      val t = params("t").toInt
-      val n = params("n").toInt
-      val v = params("v").toInt
-
-      var checkpointdir = "/"
-
-      var file = ""
-
-      var print = "true"
-
-      if (params.contains("checkpointdir")) {
-        checkpointdir = params("checkpointdir")
-      }
-
-      if (params.contains("file")) {
-        file = params("file")
-      }
-
-      if (params.contains("print")) {
-        print = params("print")
-      }
-
-      var colorings = 6
-      if (params.contains("numbercolorings")) {
-        colorings = params("numbercolorings").toInt
-      }
-
-      val conf = new SparkConf().setMaster("local[*]").setAppName("Parallel IPOG").set("spark.driver.maxResultSize", "0")
-        .set("spark.checkpoint.compress", "true")
-      val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
-      sc.setLogLevel("OFF")
-
-      val tests = newipogcoloring(n, t, v, sc, colorings)
-
-      //Print the tests
-      println(s"Printing the ${tests.size} tests for Parallel IPOG:")
-      tests.foreach(print_helper(_))
-
-    }
-
-    catch {
-      case e: Exception => {
-        println("Parsing for Coloring, please verify the command")
-        println("Type --help for more info")
-      }
-    }
-
-  }
-
 
   /*
-  Parallel IPOG, but with multiple tests being selected at the same time.
+  Distributed IPOG COLORING
    */
-  def tryGenerateParallelIPOGM(params: Map[String, String]): Unit = {
+  def handle_distributed_ipog_coloring(params: Map[String, String]): Unit = {
 
     try {
       val t = params("t").toInt
@@ -754,7 +551,7 @@ object MainConsole {
       val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
       sc.setLogLevel("OFF")
 
-      val tests = parallel_ipogm(n, t, v, sc, colorings, hstep, resume)
+      val tests = distributed_ipog_coloring(n, t, v, sc, colorings, hstep, resume)
 
       //Print the tests
       println(s"Printing the ${tests.size} tests for Parallel IPOG:")
@@ -773,9 +570,9 @@ object MainConsole {
 
 
   /*
- Parallel IPOG with Set Cover algorithm
+ Distributed IPOG HYPERGRAPH COVER
   */
-  def parallel_ipog_m_setcover(params: Map[String, String]): Unit = {
+  def handle_distributed_ipog_hypergraph(params: Map[String, String]): Unit = {
 
     try {
       val t = params("t").toInt
@@ -830,7 +627,7 @@ object MainConsole {
       val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
       sc.setLogLevel("OFF")
 
-      val tests = parallel_ipogm_setcover(n, t, v, sc, hstep, vstep, resume)
+      val tests = distributed_ipog_hypergraph(n, t, v, sc, hstep, vstep, resume)
 
       //Print the tests
       println(s"Printing the ${tests.size} tests for Parallel IPOG:")
@@ -844,118 +641,6 @@ object MainConsole {
         println("Type --help for more info")
       }
     }
-  }
-
-
-  /*
-  Run a test suite for a typical algorithm (Like Graph Coloring)
-  --ts
-   */
-  def tryRunTestSuite(params: Map[String, String]): Unit = {
-    //    try {
-    //          val initialT = params("initialT").toInt
-    //      val initialN = params("initialN").toInt
-    //      val initialV = params("initialV").toInt
-    //
-    //      val maxT = params("maxT").toInt
-    //      val maxN = params("maxN").toInt
-    //      val maxV = params("maxV").toInt
-
-    var tokens = testSuiteParser(params("ts"))
-    var initialN = tokens(0)
-    var initialT = tokens(1)
-    var initialV = tokens(2)
-
-    var maxN = tokens(3)
-    var maxT = tokens(4)
-    var maxV = tokens(5)
-
-    val algorithm = params("type")
-
-    var colorings = 6
-    if (params.contains("numbercolorings")) {
-      colorings = params("numbercolorings").toInt
-    }
-
-    if (params.contains("save")) {
-      save = true //activate save then.
-    }
-
-    val path = if (params.contains("localdir")) {
-      Some(params("localdir"))
-    } else None
-
-    val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK test suite mode").set("spark.driver.maxResultSize", "0")
-      .set("spark.checkpoint.compress", "true")
-
-    //Set the path if we have enabled it in our options.
-    if (!path.isEmpty) conf.set("spark.local.dir", path.get)
-
-    val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
-    sc.setLogLevel("OFF")
-
-    //Grab the hstep and vstep parameters
-    var hstep = if (params.contains("hstep")) {
-      params("hstep").toInt
-    }
-    else -1
-
-    var vstep = if (params.contains("vstep")) {
-      params("vstep").toInt
-    }
-    else -1
-
-
-    println(s"Running the test suite $initialN/$initialT/$initialV to $maxN/$maxT/$maxV ")
-
-    if (algorithm == "ipogcoloring" || algorithm == "parallel_ipog" || algorithm == "parallel_ipog_m" || algorithm == "parallel_ipog_m_setcover")
-      runTestSuite(initialT, initialV, maxT, maxN, maxV, sc, algorithm, colorings)
-    else
-      runTestSuiteColoring(initialN, initialT, initialV, maxT, maxN, maxV, sc, algorithm)
-
-    // }
-
-    //    catch {
-    //      case e: Exception => {
-    //        println("Parsing for test suite, please verify the command")
-    //        println("Type --help for more info")
-    //      }
-    //    }
-
-  }
-
-  /*
- Run a big test suite. Graph Coloring, and Parallel IPOG
-  */
-  def tryRunAllAlgorithms(params: Map[String, String]): Unit = {
-    // try {
-    var tokens = testSuiteParser(params("all"))
-    var initialN = tokens(0)
-    var initialT = tokens(1)
-    var initialV = tokens(2)
-
-    var maxN = tokens(3)
-    var maxT = tokens(4)
-    var maxV = tokens(5)
-
-    var colorings = 6
-    if (params.contains("numbercolorings")) {
-      colorings = params("numbercolorings").toInt
-    }
-
-    val conf = new SparkConf().setMaster("local[*]").setAppName("Running all TSPARK ALGORITHMS").set("spark.driver.maxResultSize", "0")
-      .set("spark.checkpoint.compress", "true")
-    val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
-    sc.setLogLevel("OFF")
-
-    println(s"Running the test suite for parallel ipog $initialN/$initialT/$initialV to $maxN/$maxT/$maxV ")
-    var algorithm = "parallel_ipog_m"
-    runTestSuite(initialT, initialV, maxT, maxN, maxV, sc, algorithm, colorings)
-
-    println(s"Running the test suite for graph coloring $initialN/$initialT/$initialV to $maxN/$maxT/$maxV ")
-    algorithm = "simplecoloring"
-    runTestSuiteColoring(initialN, initialT, initialV, maxT, maxN, maxV, sc, algorithm)
-
   }
 
 
@@ -976,15 +661,6 @@ object MainConsole {
 
     print_combos_in_order(n, t, v, sc)
   }
-
-  //    catch {
-  //      case e: Exception => {
-  //        println("Parsing for test suite, please verify the command")
-  //        println("Type --help for more info")
-  //      }
-  //    }
-
-  // }
 
 
   /** Parser the test suite data

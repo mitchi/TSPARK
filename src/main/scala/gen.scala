@@ -79,14 +79,18 @@ package generator
 
 import cmdline.resume_info
 import generator.gen.filename
+import ordercoloring.OrderColoring.orderColoring
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
+
 import scala.collection.mutable.ArrayBuffer
 import setcover.Algorithm2._
+
 import scala.annotation.tailrec
 import scala.util.Random
 import org.apache.spark.storage.StorageLevel
+
 import scala.collection.mutable
 import scala.io.Source
 //Import all enumerator functions
@@ -399,27 +403,6 @@ object gen extends Serializable {
     else false
   }
 
-
-  /**
-    * Run a test suite for IPOG algorithms
-    * Used locally
-    */
-  def runTestSuite(initialT: Int, initialV: Int, maxT: Int, maxN: Int,
-                   maxV: Int, sc: SparkContext, algorithm: String = "parallel_ipog",
-                   numberProcessors: Int = 6, hstep: Int = -1, vstep: Int = -1): Unit = {
-    //T
-    for (t <- initialT to maxT) {
-      //vary v
-      for (v <- initialV to maxV) {
-        algorithm match {
-          case "parallel_ipog" => newipogcoloring(maxN, t, v, sc, numberProcessors)
-          case "parallel_ipog_m" => parallel_ipogm(maxN, t, v, sc, numberProcessors, hstep)
-          case "parallel_ipog_m_setcover" => parallel_ipogm_setcover(maxN, t, v, sc, hstep, vstep, None)
-        }
-      }
-    }
-  }
-
   /**
     * The problem with the filter combo technique is that it can be very slow when the test suite becomes very large.
     * It is better to filter using a fixed number of tests at a time. Otherwise we will be testing the same combos multiple times.
@@ -526,272 +509,6 @@ object gen extends Serializable {
 
 
   /**
-    * Here the idea is to use the set cover algorithm to perform an optimized horizontal extension.
-    *
-    * First, we take the test suite, and we extend every test with every possible value of its domain for the new parameter.
-    * When using domain sizes based on v, we simply generate v tests for every test.
-    * If v=4, this will quadruple our new number of tests. But it's ok.
-    *
-    * Then, what we do is we map every combo to every fitting test.
-    * the RDD will look like this : combo line : list of tests.
-    * The list of tests can be encoded into integers + integer compression if the list of tests stays little.
-    * It can also be generated on the fly for every combo if we keep the broadcasted list of tests on hand.
-    *
-    * Then, we do a distributed count.
-    *
-    * The algorithm ends when all the combos that can be covered, are covered.
-    *
-    * .....................................
-    * For every combo, we generate V versions of the test, and we test to see if they are compatible.
-    * But first, we should check if this combo has this parameter active or not. If it doesn't, it makes
-    * our life easier and we can stop right now. No hard work.
-    *
-    * Check if the combo can be alive in the test. Write a function for this. Just check for the nth character.
-    *
-    *
-    * For each test, and their v variants, we check if they can cover the combo. If they do, we write them on the list.
-    * Every combo will be an object.  This object contains the original combo, and the list of test variants that covers it.
-    *
-    * We take the combos that have empty lists and save them. These combos will be used in the vertical extension.
-    *
-    *
-    * Idee : garder le numero, pour chaque test choisi, du test original? Ou alors, trier tout et remplacer le test qui fit le plus.
-    *
-    * @param tests
-    * @param v
-    * @param sc
-    * @return
-    */
-  def setcover_horizontalextension(tests: Array[Array[Char]], combos: RDD[Array[Char]], v: Int, t: Int, sc: SparkContext):
-  (Array[Array[Char]], RDD[Array[Char]]) = {
-    //Take our test suite and broadcast it.
-    val broadcasted_tests = sc.broadcast(tests)
-
-    //    println("Printing the combos before ")
-    //    combos.collect.foreach(print_helper(_))
-    //    println("***************")
-
-    //Every combo can now contain tests
-
-    var t1 = System.nanoTime()
-
-    var newCombos = combos.map(combo => {
-      var possibleTests = new ArrayBuffer[(Array[Char], Int)]()
-
-      //Go through all tests, and put valid tests in the possibleTests data structure
-      for (i <- 0 until broadcasted_tests.value.length) {
-        val test = broadcasted_tests.value(i)
-
-        //Is this a test that contains stars (missing values)?
-        var stars = if (test.contains('*'))
-          true
-        else
-          false
-
-        //Generate all possible versions of this test case
-        var versions = testVersions(test, v)
-
-        //Check for compatibility
-        for (j <- 0 until versions.size) {
-          val answer = isComboHere(combo, versions(j), t)
-          if (answer == true) { //if true, we add this version to the possible tests
-
-            if (stars == false) {
-              possibleTests += Tuple2(versions(j), i) //we also include the test root as well
-            }
-            else {
-              val merged = mergeTests(versions(j), combo).get
-              possibleTests += Tuple2(merged, i)
-            }
-          }
-        }
-      }
-      //Try every test with this combo
-      //result is a tuple : (combo, list of tests)
-      (combo, possibleTests)
-
-    })
-    newCombos.cache()
-
-    println("There are " + newCombos.count() + "combos")
-    var t2 = System.nanoTime()
-    println("Elapsed time for generating the possible tests: " + (t2 - t1).toDouble / 1000000000 + " seconds")
-
-
-    //    newCombos.collect().foreach(  e => {
-    //      print_helper(e._1)
-    //      val list =  for (i<-e._2) yield utils.print_helper2(i._1, " root: " + i._2.toString)
-    //      print(s"List : $list")
-    //      println("---")
-    //    })
-
-    var bestTests = new ArrayBuffer[(String, Int)]()
-
-    var j = 0 //counter for the test we choose to cover
-    var remainingElements = false
-    var uncoveredRoots = new ArrayBuffer[Int]()
-
-    //Now we choose the best tests to cover our combos
-    loop
-
-    def loop(): Unit = {
-
-      newCombos = newCombos.localCheckpoint() //checkpoint for speed
-
-      //      println(s"There are ${newCombos.count()} combos remaining")
-      //      println(s"***************ITERATION $j **************************")
-
-      //Stop the algorithm when we have extended every existing test
-      if (j == tests.length)
-        return
-
-      t1 = System.nanoTime()
-
-      //Choose the most frequent test, for the given root
-      val s1 = newCombos.flatMap(elem => {
-        val strings = for (i <- elem._2; if (i._2 == j))
-          yield (utils.arrayToString(i._1), (i._2, 1)) //the accumulator is the last element of the tuple. This is important.
-        strings
-      })
-
-      println("s1.count" + s1.count())
-
-      t2 = System.nanoTime()
-      println("Elapsed time for the flatMap " + (t2 - t1).toDouble / 1000000000 + " seconds")
-
-      //Check for empty collection.This means that there are no more combos for that root.
-      if (s1.isEmpty()) {
-        // println("The collection is empty for this root. Moving to the next root ")
-        remainingElements = true
-        return
-      }
-
-      t1 = System.nanoTime()
-
-      val s2 = s1.reduceByKey((a, b) => {
-        (a._1, a._2 + b._2)
-      })
-
-      //      println(s"Now we want to select the best test version for root $j")
-      //      println(s"Printing the flatmap + reducebyKey results for the root:$j")
-      //      s2.collect().foreach( println)
-
-      //If we want greedy random, we can choose from a list here. From now, it won't be greedy random.
-      val best: (String, (Int, Int)) = s2.reduce((a, b) => {
-        if (a._2._2 > b._2._2) a
-        else b
-      })
-
-      t2 = System.nanoTime()
-      println("Elapsed time for reduceByKey + reduce " + (t2 - t1).toDouble / 1000000000 + " seconds")
-
-      //      println("Best test chosen is " + best._1)
-      //      println("Now removing every combo that contains the test "+ best._1+" and the root "+best._2._1)
-
-      //Transformer en Array[Char] après.
-      //Mettre dans notre liste des tests choisis.
-      bestTests += Tuple2(best._1, best._2._1)
-
-      //      println("Printing before removing: ")
-      //      newCombos.collect().foreach(  e => {
-      //        print_helper(e._1)
-      //        val list =  for (i<-e._2) yield utils.print_helper2(i._1, " root: " + i._2.toString)
-      //        print(s"List : $list")
-      //        println("---")
-      //      })
-
-      //Remove combos in the RDD that contain this test
-
-      t1 = System.nanoTime()
-
-      newCombos = newCombos.flatMap(elem => {
-        val list = elem._2
-        var answer = false
-
-        loop
-
-        def loop(): Unit = {
-          for (i <- list) {
-            if (utils.arrayToString(i._1) == best._1) {
-              //print( "equal : "+ utils.arrayToString(i._1) + " " + best._1 + "\n")
-              answer = true
-              return
-            }
-            //            //Other way to destroy a combo : we have already chosen this root.
-            //            if (i._2 == best._2._1)
-            //            {
-            //              answer = true
-            //              return
-            //            }
-          }
-        }
-
-        if (answer == true) None
-        else Some(elem)
-      })
-
-      println("Count after removing " + newCombos.count())
-      t2 = System.nanoTime()
-      println("Elapsed time for removing shit" + (t2 - t1).toDouble / 1000000000 + " seconds")
-
-
-      //      println("Printing after removing")
-      //      newCombos.collect().foreach(  e => {
-      //        print_helper(e._1)
-      //        val list =  for (i<-e._2) yield utils.print_helper2(i._1, " root: " + i._2.toString)
-      //        print(s"List : $list")
-      //        println("---")
-      //      })
-
-
-      j += 1 //Go to the next test
-
-      loop
-    } //end of big loop function
-
-    //Add all the tests of the proper root to the test suite. Add a * at the end, because they were not needed to cover anything this time
-    var otherTests = new ArrayBuffer[Array[Char]]()
-
-    if (remainingElements == true) {
-      for (i <- j until tests.size) {
-        val newTest = growby1(tests(i), '*')
-        //print("On ajoute le test : ")
-        //print_helper(newTest)
-        otherTests += newTest
-      }
-    }
-
-    //Transform to string
-    var testsToArray = for (i <- bestTests) yield utils.stringToArray(i._1)
-    testsToArray = otherTests ++ testsToArray
-
-    //Now we return the results, and also the uncovered combos.
-    (testsToArray.toArray, newCombos.map(e => e._1))
-  }
-
-
-  /**
-    * We sort the test suite by putting the tests with the stars first.
-    *
-    * @param tests
-    * @return
-    */
-  def sortForStars(tests: Array[Array[Char]]): Array[Array[Char]] = {
-    import scala.collection.mutable.ListBuffer
-
-    var list = new ListBuffer[Array[Char]]()
-
-    for (i <- tests) {
-      if (i.contains('*)) { //if the test contains a star
-        list.prepend(i)
-      }
-      else list.append(i)
-    }
-    return list.toArray
-  }
-
-
-  /**
     * Takes a test suite that contains missing values, and remaining combos, and uses a graph coloring algorithm.
     *
     * @param tests
@@ -807,9 +524,6 @@ object gen extends Serializable {
       else None
     })
 
-    //    println("Printing the incomplete tests : ")
-    //    incompleteTests.foreach(print_helper(_))
-
     //Do the contrary here. Remove those we have just added from the original test set. This could be more optimal but would need custom code I guess.
     var testsWithoutStars = tests.flatMap(arr => {
       if (containsStars(arr) == true) {
@@ -817,18 +531,13 @@ object gen extends Serializable {
       }
       else Some(arr)
     })
-    //    println("Printing the complete tests : ")
-    //    testsWithoutStars.foreach(print_helper(_))
 
-    //var input = combos.union(sc.makeRDD(incompleteTests))
     var input = combos.collect union incompleteTests
 
-    //var coloredTests = parallelLittleColoring(input, sc)
     var coloredTests = orderColoring(numberProcessors, input, sc)
 
     coloredTests ++ testsWithoutStars
   }
-
 
   /**
     * Not an adapative version of M. We always aim to do 100 iterations of horizontal growth
@@ -1344,94 +1053,6 @@ object gen extends Serializable {
 
 
   /**
-    * Very similar to newipogcoloring but supports seeding with an existing test suite.
-    *
-    * @param n
-    * @param t
-    * @param v
-    * @param sc
-    * @return
-    */
-  def parallel_ipog(n: Int, t: Int, v: Int, sc: SparkContext, numberProcessors: Int = 6, testsuite_filename: String = "", skipToParam: Int = 0): Array[Array[Char]] = {
-
-    val expected = utils.numberTWAYCombos(n, t, v)
-    println("Parallel IPOG with resume")
-    println(s"Number of parallel graph colorings to optimize: $numberProcessors")
-    println(s"Problem : n=$n,t=$t,v=$v")
-    println(s"Expected number of combinations is : $expected ")
-    println(s"Formula is C($n,$t) * $v^$t")
-
-    var time_elapsed = 0
-
-    import java.io._
-    val pw = new PrintWriter(new FileOutputStream(filename, true))
-
-    if (skipToParam == 0 && testsuite_filename != "") {
-      println("No skip to param value defined, or no filename defined. Exiting")
-      System.exit(1)
-    }
-
-    var tests = Array[Array[Char]]() //empty collection
-
-    if (testsuite_filename != "")
-      tests = readTestSuite(testsuite_filename)
-    else tests = fastGenCombos(t, t, v, sc).collect()
-
-    //We have started with t covered parameters
-    var i = if (skipToParam != 0)
-      skipToParam - t - 1
-    else 0
-
-    var t1 = System.nanoTime()
-
-
-    println("printing initial tests")
-    tests.foreach(test => print_helper(test))
-
-    loop
-
-    //Cover all the remaining parameters
-    def loop(): Unit = {
-      //Exit condition
-      if (i + t == n) return
-
-      println("Currently covering parameter : " + (i + t + 1))
-      var newCombos = genPartialCombos(i + t, t - 1, v, sc).persist(StorageLevel.MEMORY_AND_DISK)
-
-      //Apply horizontal growth
-      val r1 = setcoverhash_progressive(tests, newCombos, v, t, sc)
-
-      newCombos = r1._2 //Retrieve the combos that are not covered
-      tests = r1._1 //Replace the tests
-
-      //If there are still combos left to cover, apply a vertical growth algorithm
-      if (newCombos.isEmpty() == false) {
-        tests = updateTestColoring(tests, newCombos, sc, v)
-      }
-
-      i += 1 //move to another parameter
-
-      println(s"ts size : ${tests.size}")
-
-      var t2 = System.nanoTime()
-      var time_elapsed = (t2 - t1).toDouble / 1000000000
-
-      pw.append(s"$t;${i + t};$v;PARALLEL_IPOG;$time_elapsed;${tests.size}\n")
-      println(s"$t;${i + t};$v;PARALLEL_IPOG;$time_elapsed;${tests.size}\n")
-      pw.flush()
-
-      saveTestSuite(s"testsuite$t-${i + t}-$v.txt", tests)
-
-      System.gc()
-      loop
-    }
-
-    //Return the test suite
-    tests
-  }
-
-
-  /**
     * We have a combo, and a few tests. We have to generate a tuple combo,test
     * Also include the root of the test in the result
     */
@@ -1498,103 +1119,7 @@ object gen extends Serializable {
     filledTests ++ testsWithoutStars
   }
 
-  /**
-    * This is a version that uses the set cover algorithm instead of graph coloring. It should go more slowly, but offer better results.
-    * Supports resuming a test suite as well.
-    *
-    * @param n
-    * @param t
-    * @param v
-    * @param sc
-    * @return
-    */
-  def parallel_ipogm_setcover(n: Int, t: Int, v: Int, sc: SparkContext, hstep: Int = -1, vstep: Int = -1,
-                              resume: Option[resume_info] = None): Array[Array[Char]] = {
-    val expected = utils.numberTWAYCombos(n, t, v)
-    println("Parallel IPOG with M tests")
-    println(s"Using Hypergraph Set Cover for Vertical Growth")
-    println(s"Using hstep=$hstep and vstep=$vstep")
-    println(s"Problem : n=$n,t=$t,v=$v")
-    println(s"Expected number of combinations is : $expected ")
-    println(s"Formula is C($n,$t) * $v^$t")
 
-    var time_elapsed = 0
-
-    import java.io._
-    val pw = new PrintWriter(new FileOutputStream(filename, true))
-
-    //Horizontal extend all of them
-    var tests =
-      if (resume.isEmpty) {
-        fastGenCombos(t, t, v, sc).collect()
-      }
-      else {
-        resume.get.tests
-      }
-
-    //We have started with t covered parameters
-    var i = 0
-
-    if (!resume.isEmpty) {
-      println(s"Resuming the test suite extension at parameter ${resume.get.param}")
-      i = resume.get.param - t - 1
-    }
-
-    var t1 = System.nanoTime()
-
-    loop
-
-    //Cover all the remaining parameters
-    def loop(): Unit = {
-      //Exit condition
-      if (i + t == n) return
-
-      println("Currently covering parameter : " + (i + t + 1))
-      var newCombos = genPartialCombos(i + t, t - 1, v, sc).persist(StorageLevel.MEMORY_AND_DISK)
-
-      println(s" ${newCombos.count()} combos to cover by setcover_m_progressive")
-      println(s" we currently have ${tests.size} tests")
-
-      //Apply horizontal growth
-      // val r1 = setcover_m_progressive(tests, newCombos, v, t, sc)
-      //val r1 = horizontalgrowth_1percent(tests, newCombos, v, t, sc, hstep)
-      val r1 = horizontalgrowthfinal(tests, newCombos, v, t, sc, hstep)
-
-      newCombos = r1._2 //Retrieve the combos that are not covered
-      tests = r1._1 //Replace the tests
-
-      println(s" ${newCombos.count()} combos remaining , sending to set cover algorithm")
-
-      //If there are still combos left to cover, apply a vertical growth algorithm
-      if (newCombos.isEmpty() == false) {
-        tests = updateTestsSetCover(tests, newCombos, sc, v, vstep)
-      }
-
-      i += 1 //move to another parameter
-
-      println(s"ts size : ${tests.size}")
-
-      var t2 = System.nanoTime()
-      var time_elapsed = (t2 - t1).toDouble / 1000000000
-
-      pw.append(s"$t;${i + t};$v;PARALLEL_IPOG_M_SETCOVER;$time_elapsed;${tests.size}\n")
-      println(s"$t;${i + t};$v;PARALLEL_IPOG_M_SETCOVER;$time_elapsed;${tests.size}\n")
-      pw.flush()
-
-      //If the option to save to a text file is activated
-      if (save == true) {
-        println(s"Saving the test suite to a file named $t;${i + t};$v.txt")
-        //Save the test suite to file
-        saveTestSuite(s"$t;${i + t};$v.txt", tests)
-      }
-
-      System.gc()
-      loop
-    }
-
-    //Return the test suite
-    tests
-  }
 
 
   /**
@@ -1725,6 +1250,57 @@ object gen extends Serializable {
     println(s"$filename;HYPERGRAPH_EDN;$time_elapsed;$size\n")
     pw.flush()
   }
+
+
+  /**
+    * This is a sequential coloring algorithm. It is extremely quick, which makes me a bit sad.
+    * Algorithm :
+    * ->Generate combos.
+    * ->Combos to Graph Coloring
+    * ->Generate a random coloring sequence.
+    * ->Color the sequence in a single while loop
+    * ->Return the graph in the following format (color, original combo text)
+    */
+  def singlethreadcoloring(n: Int, t: Int, v: Int, sc: SparkContext, numberProcessors: Int = 6): Array[Array[Char]] = {
+
+    val expected = utils.numberTWAYCombos(n, t, v)
+    println("Graph Coloring single thread (Order Coloring)")
+    println(s"Number of parallel graph colorings : $numberProcessors")
+    println(s"Problem : n=$n,t=$t,v=$v")
+    println(s"Expected number of combinations is : $expected ")
+    println(s"Formula is C($n,$t) * $v^$t")
+
+    var t1 = System.nanoTime()
+
+    import java.io._
+    val pw = new PrintWriter(new FileOutputStream(filename, true))
+
+    //Step 1 : Cover t parameters
+    val steps = generate_all_steps(n, t)
+    val r1 = sc.makeRDD(steps) //Parallelize the steps
+    val r2 = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
+    var testsRDD = r2.flatMap(pv => generate_vc(pv, t, v)).cache() //Generate the tway combos
+
+    var t2 = System.nanoTime()
+    var time_elapsed = (t2 - t1).toDouble / 1000000000
+    println(s"Generation time : $time_elapsed seconds")
+
+    t1 = System.nanoTime()
+    var tests = orderColoring(numberProcessors, testsRDD.collect(), sc)
+
+    t2 = System.nanoTime()
+
+    time_elapsed = (t2 - t1).toDouble / 1000000000
+    println(s"SIMPLE COLORING TIME : $time_elapsed seconds")
+
+    //Record the results into the file in append mode
+    pw.append(s"$t;${n};$v;STCOLORING;$time_elapsed;${tests.size}\n")
+    println(s"$t;${n};$v;STCOLORING;$time_elapsed;${tests.size}\n") //print it too
+    pw.flush()
+
+    tests
+  }
+
 
 } //end class gen
 
