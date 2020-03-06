@@ -7,6 +7,11 @@ updateOptions := updateOptions.value.withCachedResolution(true)
 libraryDependencies += "org.apache.spark" %% "spark-sql" % "2.4.4"
 libraryDependencies += "org.apache.spark" %% "spark-graphx" % "2.4.4"
 
+libraryDependencies ++= Seq(
+  "org.backuity.clist" %% "clist-core" % "3.5.1",
+  "org.backuity.clist" %% "clist-macros" % "3.5.1" % "provided")
+
+
 mainClass in assembly := Some("cmdline.MainConsole")
 
 assemblyMergeStrategy in assembly := {

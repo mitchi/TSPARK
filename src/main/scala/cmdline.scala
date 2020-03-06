@@ -1,19 +1,16 @@
 package cmdline
-
 import org.apache.spark.{SparkConf, SparkContext}
 import enumerator.distributed_enumerator._
 import ipog.d_ipog_coloring._
-
 case class resume_info(var tests: Array[Array[Char]], var param: Int)
 
 object MainConsole {
 
   import central.gen._
   import utils.utils._
-
   val SPARKVERSION = "2.4.4"
   val VERSION = "1.0.0"
-  val HEADER = s"TSPARK $VERSION (c) 2019 Edmond LA CHANCE. Developped using Spark Version : $SPARKVERSION"
+  val HEADER = s"TSPARK by 2019 Edmond LA CHANCE. Developped using Apache Spark $SPARKVERSION"
   val FOOTER = "See results.txt file. For all other tricks, consult the documentation"
 
   def readSeeding(s: String): resume_info = {
@@ -140,17 +137,6 @@ object MainConsole {
       """.stripMargin
     )
   }
-
-  //  def configFile2args(path: String): Option[Array[String]] = {
-  //    if (File(Path(path)).exists) {
-  //      val input = Source.fromFile(path).getLines()
-  //      val res = input.flatMap(_.trim().split(" "))
-  //      Some(res.toArray)
-  //    }
-  //    else {
-  //      None
-  //    }
-  //  }
 
   def args2maps(args_array: Array[String]): Map[String, String] = {
     // Input array : [--<parameter name>, <value>, --<parameter name>, <value>,...]
