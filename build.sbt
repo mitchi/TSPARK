@@ -12,7 +12,7 @@ libraryDependencies ++= Seq(
   "org.backuity.clist" %% "clist-macros" % "3.5.1" % "provided")
 
 
-mainClass in assembly := Some("cmdline.MainConsole")
+mainClass in assembly := Some("cmdlineparser.Main")
 
 assemblyMergeStrategy in assembly := {
   case PathList("META-INF", xs@_*) => MergeStrategy.discard
