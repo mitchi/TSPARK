@@ -437,6 +437,19 @@ object gen extends Serializable {
 
 
   /**
+    * The code will be more concise for the cmdline code
+    *
+    * @param combos
+    * @param tests
+    * @param sc
+    * @return
+    */
+  def verifyTS(combos: RDD[Array[Char]], tests: Array[Array[Char]], sc: SparkContext): Boolean = {
+    val remaining = progressive_filter_combo(tests, combos, sc)
+    remaining.isEmpty()
+  }
+
+  /**
     * Generate every version of a test according to the v parameter
     * This is used in the horizontal extension optimization
     * This does not work on

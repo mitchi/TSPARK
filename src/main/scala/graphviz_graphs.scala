@@ -185,7 +185,8 @@ object graphviz_graphs {
     results.sortBy(_._1)
   }
 
-  /**
+  /** Run a graph coloring of a graphviz graph file
+    * Return a map of vertex:colors to standard output
     *
     * @param filename
     * @param sc
