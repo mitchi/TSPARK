@@ -8,7 +8,7 @@ import org.apache.spark.storage.StorageLevel
 import utils.utils.saveTestSuite
 import utils.utils
 
-object d_ipog_coloring {
+object d_ipog {
 
 
   /**
@@ -166,8 +166,6 @@ object d_ipog_coloring {
       println(s" we currently have ${tests.size} tests")
 
       //Apply horizontal growth
-      // val r1 = setcover_m_progressive(tests, newCombos, v, t, sc)
-      //val r1 = horizontalgrowth_1percent(tests, newCombos, v, t, sc, hstep)
       val r1 = horizontalgrowthfinal(tests, newCombos, v, t, sc, hstep)
 
       newCombos = r1._2 //Retrieve the combos that are not covered
@@ -207,4 +205,4 @@ object d_ipog_coloring {
   }
 
 
-}
+} //end of the singleton object

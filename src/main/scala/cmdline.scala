@@ -1,7 +1,7 @@
 package cmdline
 import org.apache.spark.{SparkConf, SparkContext}
 import enumerator.distributed_enumerator._
-import ipog.d_ipog_coloring._
+import ipog.d_ipog._
 case class resume_info(var tests: Array[Array[Char]], var param: Int)
 
 object MainConsole {
