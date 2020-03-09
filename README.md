@@ -1,4 +1,5 @@
-By Edmond La Chance and Sylvain Hallé.
+![liflab](https://avatars1.githubusercontent.com/u/15191496?s=200&v=4)
+By Edmond La Chance and Sylvain Hallé
 
 - [Introduction](#introduction)
 - [Download](#Download)
