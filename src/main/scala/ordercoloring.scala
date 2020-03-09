@@ -69,8 +69,6 @@ object OrderColoring {
     * Color using this function and good parameters
     * Use this function the vertex is adjacent to the other, and we want to know what the best color is
     *
-    * @param vertices
-    * @param vertex
     * @return THE COLOR THAT WE CAN TAKE
     */
   def color(neighbor_colors: Array[Int]): Int = {
@@ -140,12 +138,10 @@ object OrderColoring {
     coloringToTests(sc.makeRDD(tt))
   }
 
-
   /** Little coloring for the order coloring algorithm
     * The neighbors, are always the lower vertices. Never the top ones.
     * We can still increase the speed by relying less on the Garbage Collector to size the array
     *
-    * @param sequence
     * @param vertices
     * @return
     */

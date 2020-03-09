@@ -343,7 +343,7 @@ object MainConsole {
       }
       else -1
 
-      val tests = simple_setcover(n, t, v, sc, vstep)
+      val tests = simple_hypergraphcover(n, t, v, sc, vstep)
       println(s"Printing the ${tests.size} tests")
       tests.foreach(print_helper(_))
     }

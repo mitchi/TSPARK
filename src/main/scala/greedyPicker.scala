@@ -1,4 +1,4 @@
-package setcover
+package hypergraph_cover
 
 import scala.collection.mutable.ArrayBuffer
 

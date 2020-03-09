@@ -1,4 +1,4 @@
-package setcover
+package hypergraph_cover
 
 import central.gen
 import org.apache.spark.SparkContext

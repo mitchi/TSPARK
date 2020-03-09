@@ -1,108 +1,17 @@
-/** This is a new combination generator for a t-way problem based on the IPOG algorithm
-  * The variant we add however is that we parallelelize the combination generator
-  * The parameter vector generation is distributed, and the value combination generation is distributed as well
-  * Edmond La Chance UQAC 2019
-  * *
-  * Algorithms for solving are now included as well.
-  * *
-  * Cluster mode : Use spark-submit with Fat JAR, and use basic SparkContext()
-  * *
-  *
-  * IPOG approach to store combos :
-  * Assuming no object overhead, and no alignment.
-  * *
-  *1. A number of pointers to memory. One pointer per parameter vector combination
-  *2. An array of bits for the value combinations.
-  * *
-  * Assuming a 32 bit system, so 32 bit pointers (4 bytes)
-  * If it's 64 bit, the combos are twice as heavy.
-  * (It would be better to have a full static table, instead of pointers). We would save pointer space.
-  * But the problem is, if we have a variable number of parameters, the structures wouldn't have the same size.
-  * A fix for this would be to make them all "maximum size".
-  * *
-  * If we have the problem : n=200, t=4, v=2
-  * There are 200 C4 parameter vectors
-  * *
-  * -> 200 C4 = 64684950  * 4 = 258.7398 megs of pointers
-  * -> 1034959200 value combinations. 1 bit per value combination -> 129 megs of memory.
-  * *
-  *
-  * IPOG COLORING APPROACH to store combos :
-  * *
-  * We generate all the combos for the next parameter to cover.
-  * Therefore, we only need to store a small part of the combos.
-  * And these combos are generated and filtered directly in place, on the cluster.
-  * 200 character per combo. Each character is 16 bit.
-  * *
-  * Biggest :
-  * 200 C 3 * 2^4   = 21014400  * 200 characters * 2bytes per character =
-  *8.4 gigs of distributed memory.
-  * -> We can compress this.
-  * *
-  * TODO : Progressive graph coloring
-  * TODO : un algorithme (one test at a time style AETG)
-  * *
-  * 1. Generate 1000 combos.
-  * 2. Color graph
-  * 3. Add 1000 combos
-  * 4. Color graph
-  * Etc, etc.
-  * *
-  * OR
-  * *
-  * Generate 10 000 combos
-  * *
-  * Color 1000 nodes
-  * merge them
-  * *
-  * Color 1000 nodes
-  * merge them
-  * *
-  * Take all the merge nodes, and color them. Return the graph.
-  * *
-  * TODO : Remplacer le système avec l'étoile pour les combos.
-  * A la place, utiliser le système suivant :
-  * Le caractère 0
-  * *
-  * TODO fix set cover... utiliser un set plus restreint de tests possibles pour chaque combos.
-  * On crée une suite de tests... et on l'associe aux t-way combos. Ensuite on fait le Count.
-  *
-  *
-  * * Here we implement an algorithm similar to the AETG algorithm. This algorithm covers the combos by adding one test at a time.
-  * * https://ieeexplore.ieee.org/document/605761 for the algorithm description
-  *
-  *
-  *
-  */
+//This file needs more refactoring
 
 package central
-
 import ordercoloring.OrderColoring.orderColoring
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 import scala.collection.mutable.ArrayBuffer
-import setcover.Algorithm2._
+import hypergraph_cover.Algorithm2._
 import scala.io.Source
 //Import all enumerator functions
 import enumerator.distributed_enumerator._
 import progressivecoloring.progressive_coloring._
 import utils._
-
-//TODO supporter mixed strength, contraintes etc.
-//Todo changer CHAR pour byte. Char = 16 bits, donc il y a du waste ici
-//Todo ajouter support pour parameters avec un nombre variable de valeurs différentes. Faire ça avec un fichier
-//Todo tester avec Kryro serialization, et tester un run avec JProfiler??
-//Todo : expérimenter avec la compression de combos peut-être??
-
-/*
-Todo : une fonction pour accélérer la recherche. Une première binary search, pour trouver la première occurence du combo
-Et ensuite recherche normale exhaustive sur le reste des combos
-S'assurer que la recherche combo-combo est la plus rapide possible!
- */
-
-//todo : faire une version SPARK de l'algorithme singlethreadcoloring.
-//Il suffit après tout de broadcast la structure de voisinage, et de garder la couleur de chaque vertex localement.
 
 
 //If lastPV is set to true, this means that this is the last step
@@ -121,9 +30,7 @@ case class _step(stepNo: Int, startingpv: Array[Char], nextpv: Array[Char],
 }
 
 object gen extends Serializable {
-
   import utils._
-
   //Helpful global vars
   var save = false
   var debug = false
@@ -137,7 +44,7 @@ object gen extends Serializable {
     * If this is the case, we return true. Else, we return false
     * *
     * If used with RDD.filter, invert the answer of this function in order to make remove the tested combos.
-    * TODO : Optimiser pour un plus petit nombre de comparaisons -> t. Ici on compare tout le tableau quand même
+    * This function stops working when it has matched t characters.
     */
   def isComboHere[A](combo: IndexedSeq[A], test: Array[Char], t: Int): Boolean = {
 
@@ -176,7 +83,6 @@ object gen extends Serializable {
     //Return found true or false
     found
   }
-
 
   /**
     * This function is used by setcover_m_progressive and other variants.
@@ -254,11 +160,10 @@ object gen extends Serializable {
     !returnValue
   }
 
-
   /**
     * Here we execute a simple setcover algorithm
     */
-  def simple_setcover(n: Int, t: Int, v: Int, sc: SparkContext, vstep: Int = -1): Array[Array[Char]] = {
+  def simple_hypergraphcover(n: Int, t: Int, v: Int, sc: SparkContext, vstep: Int = -1): Array[Array[Char]] = {
 
     val expected = utils.numberTWAYCombos(n, t, v)
     println("Simple Set Cover algorithm (Greedy Random algorithm)")
@@ -286,8 +191,8 @@ object gen extends Serializable {
     t1 = System.nanoTime()
     //Now we have the combos, we ship them directly to the setcover algorithm
 
-    val result = if (vstep == 1) setcover.Algorithm2.greedy_algorithm2(sc, v, testsRDD)
-    else setcover.Algorithm2.greedy_setcover_buffet(sc, v, testsRDD, vstep)
+    val result = if (vstep == 1) hypergraph_cover.Algorithm2.greedy_algorithm2(sc, v, testsRDD)
+    else hypergraph_cover.Algorithm2.greedy_setcover_buffet(sc, v, testsRDD, vstep)
 
     t2 = System.nanoTime()
     time_elapsed = (t2 - t1).toDouble / 1000000000
@@ -931,17 +836,13 @@ object test3 extends App {
   //Todo : utiiliser ca :  .set("spark.local.dir", "/media/data/") //The 4TB hard drive can be used for shuffle files
   //todo : essayer de faire la couverture de M tests en moins d'étapes. Ça sauverait de la mémoire, et du temps.
   //Todo : enlever cache dans toutes les fonctions et juste remplacer par localCheckpoint au bon endroit?
-
   //Todo : file channel sont les memory mapped files en java. Regarder ça.
   //https://docs.oracle.com/javase/10/docs/api/java/nio/channels/FileChannel.html
   //https://en.wikipedia.org/wiki/Memory-mapped_file
   //todo tester n=100 t=2 v=2 avec IPOG Set Cover
-
   //todo compresser les adjlists de coloring en un BitSet peut etre?
-
   //todo essayer plusieurs types de garbage collector pour Java8
   //voir https://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/collectors.html
-
   import gen._
 
   val conf = new SparkConf().setMaster("local[1]").setAppName("Combination generator").set("spark.driver.maxResultSize", "0")
@@ -950,10 +851,8 @@ object test3 extends App {
   sc.setLogLevel("OFF")
 
   // solve_edn_hypergraph("test2.edn", sc)
-
   //  import graphviz.graphviz_graphs._
   //  val a = graphcoloring_graphviz("petersen.txt", sc, 100, "OC")
-
 
   //var t = 3
   //  var n = 6
@@ -979,10 +878,7 @@ object test3 extends App {
   //println("We have " + tests.size + " tests")
   // println("Printing the tests....")
   // tests foreach (utils.print_helper(_))
-
-
   import progressivecoloring.progressive_coloring._
-
   //
   var n = 3
   var t = 2

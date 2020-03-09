@@ -170,7 +170,7 @@ object TSPARK {
 
     import central.gen.singlethreadcoloring
     import central.gen.verifyTS
-    import central.gen.simple_setcover
+    import central.gen.simple_hypergraphcover
     import central.gen.distributed_graphcoloring
     import ipog.d_ipog._
     import utils.utils.print_combos_in_order
@@ -235,7 +235,7 @@ object TSPARK {
         val vstep = Hypergraphcover.vstep
         val verify = Hypergraphcover.verify
 
-        val tests = simple_setcover(n, t, v, sc, vstep)
+        val tests = simple_hypergraphcover(n, t, v, sc, vstep)
 
         //Verify the test suite (optional)
         if (verify == true) {
