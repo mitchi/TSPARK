@@ -1,26 +1,40 @@
-#TSPARK
 By Edmond La Chance and Sylvain Hallé.
 
+- [Introduction](#introduction)
+- [Download](#Download)
 - [Included Algorithms](#included-algorithms)
 - [Command line usage](#command-line-usage)
 - [SLURM cluster manager script](#slurm)
 
-The paper is currently pending.
+A paper that talks about TSPARK is currently pending.
+
+## Introduction
+
+TSPARK is a combinatorial testing tool (like [ACTS](https://www.nist.gov/programs-projects/automated-combinatorial-testing-software-acts)).
+TSPARK can be used as a standalone process on a powerful server, or launched using a cluster manager like SLURM.
+
+## Download
+To download TSPARK, go to the [release page](https://github.com/mitchi/TSPARK/releases) and download the latest JAR.
+TSPARK is programmed with Apache Spark 2.4.0 and requires Java 8 to run. Launch TSPARK by doing:
+
+```
+java -jar TSPARK.jar
+```
 
 ## Included algorithms
 TSPARK includes various algorithms to generate covering arrays:
 
 Using Graph reductions:
 - Distributed Hypergraph Cover
-- Distributed Graph Coloring
+- Distributed Graph Coloring (Knights and Peasants algorithm, or Order Coloring)
 - Single threaded Coloring (Ran multiple times)
 
 With Hybrid algorithms based on IPOG:
 - Distributed IPOG Coloring
 - Distributed IPOG Hypergraph 
 
-The included generator currently only supports uniform covering arrays.
-To use this 
+TSPARK currently only supports generation of uniform covering arrays for the Hybrid algorithms based on IPOG.
+To use this generator with parameters of mixed sizes, and support for universal and existential constraints, a [generator](https://github.com/liflab/combinatorial-graph-generator) by Sylvain Hallé can be used, along with the Graphviz or EDN command line options. 
 
 ## Command line usage
 
