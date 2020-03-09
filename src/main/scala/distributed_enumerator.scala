@@ -446,9 +446,17 @@ object distributed_enumerator extends Serializable {
     steps
   }
 
-  //Here we generate all the value combinations
+  /**
+    * Print all value combinations
+    *
+    * @param sc
+    * @param n
+    * @param t
+    * @param v
+    * @param path
+    */
   def generateValueCombinations(sc: SparkContext, n: Int, t: Int, v: Int,
-                                path: String = "", debug: Boolean = false): Unit = {
+                                path: String = ""): Unit = {
 
     val steps = generate_all_steps(n, t)
     val r1 = sc.makeRDD(steps) //Parallelize the steps

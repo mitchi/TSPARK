@@ -35,7 +35,7 @@ object TSPARK {
     var filename = arg[String](name = "filename", description = "file name of the .dot file")
   }
 
-
+ //Single threaded coloring with Order Coloring
   object Color extends Command(name = "color",
     description = "single threaded graph coloring") with CommonOpt {
 
@@ -90,6 +90,7 @@ object TSPARK {
   }
 
 
+  //Distributed Graph Coloring
   object Coloring extends Command(name = "dcolor", description = "distributed graph coloring") with CommonOpt {
 
     var t = arg[Int](name = "t",
@@ -103,7 +104,7 @@ object TSPARK {
 
     var memory = opt[Int](name = "memory", description = "memory for the graph structure on the cluster in megabytes", default = 500)
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
-    var algorithm = opt[String](name = "algorithm", description = "Algorithm (K&P or Order Coloring)", default = "OC")
+    var algorithm = opt[String](name = "algorithm", description = "Algorithm (KP or Order Coloring)", default = "OC")
 
   }
 
@@ -152,8 +153,7 @@ object TSPARK {
   def main(args: Array[String]) {
 
     //A map for global options
-    val map_parameters = args2maps(args)
-
+    //val map_parameters = args2maps(args)
 
     val choice = Cli.parse(args)
       .version("1.0.0")
@@ -173,6 +173,7 @@ object TSPARK {
     import central.gen.simple_setcover
     import central.gen.distributed_graphcoloring
     import ipog.d_ipog._
+    import utils.utils.print_combos_in_order
 
     choice match {
 
@@ -275,7 +276,14 @@ object TSPARK {
 
       }
 
-      case Some(Tway) => generateValueCombinations(sc, Tway.n, Tway.t, Tway.v)
+      //Generate value combinations
+      case Some(Tway) => {
+        val inOrder = Tway.inOrder
+        if (inOrder)
+          print_combos_in_order(Tway.n, Tway.t, Tway.v, sc)
+        else
+          generateValueCombinations(sc, Tway.n, Tway.t, Tway.v)
+      }
 
       case Some(Pv) =>
         generateParameterVectors(sc, Pv.n, Pv.t)

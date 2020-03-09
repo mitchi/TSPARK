@@ -273,7 +273,7 @@ object MainConsole {
       val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
       sc.setLogLevel("OFF")
 
-      generateValueCombinations(sc, n, t, v, file, true)
+      generateValueCombinations(sc, n, t, v, file)
 
     }
 
