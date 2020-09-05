@@ -477,7 +477,7 @@ object distributed_enumerator extends Serializable {
     else {
       println("Guidelines : * character is used to show that this parameter is not present in the tway combo and values start at 0")
       println(s"Value combinations for t=$t,n=$n,v=$v : \n")
-      r3.collect.foreach(vc => print(vc))
+      r3.collect.foreach(vc => print_helper(vc))
     } //else we print to screen
 
   } //fin fonction generateValueCombinations

@@ -4,6 +4,7 @@ import enumerator.distributed_enumerator._
 import ipog.d_ipog._
 case class resume_info(var tests: Array[Array[Char]], var param: Int)
 
+
 object MainConsole {
 
   import central.gen._

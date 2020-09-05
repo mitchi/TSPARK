@@ -40,6 +40,10 @@ To use this generator with parameters of mixed sizes, and support for universal 
 
 ## Command line usage
 
+The command line uses ANSI colors, and they are not supported by Windows.
+However, when TSPARK is launched through the ANSICON console, they work as they should.
+ANSICON: http://adoxa.altervista.org/ansicon/
+
 TSPARK is used using a command line interface:
 
 ```
