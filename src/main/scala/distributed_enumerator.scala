@@ -15,6 +15,8 @@ import utils.utils._
 
 object distributed_enumerator extends Serializable {
 
+  var debug = false
+
   object Helpers {
 
     implicit class dodo(x: Array[Char]) {
@@ -458,9 +460,28 @@ object distributed_enumerator extends Serializable {
   def generateValueCombinations(sc: SparkContext, n: Int, t: Int, v: Int,
                                 path: String = ""): Unit = {
 
+    import utils.utils.print_helper
+
     val steps = generate_all_steps(n, t)
-    val r1 = sc.makeRDD(steps) //Parallelize the steps
+
+    //    if (debug == true) {
+    //      var i = 0
+    //      steps.foreach( step => {
+    //        println (s"Printing step $i ")
+    //        i += 1
+    //        print_helper(step.startingpv)
+    //      })
+    //    }
+
+    val r1: RDD[_step] = sc.makeRDD(steps) //Parallelize the steps
+
+
     val r2 = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
+
+    if (debug == true) {
+      r2.collect().foreach(print_helper(_))
+    }
+
     val r3 = r2.flatMap(pv => generate_vc(pv, t, v))
 
     val expected = numberTWAYCombos(n, t, v)

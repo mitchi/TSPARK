@@ -1,12 +1,17 @@
 //This file needs more refactoring
 
 package central
+
+import enumerator.distributed_enumerator
 import ordercoloring.OrderColoring.orderColoring
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
+
 import scala.collection.mutable.ArrayBuffer
 import hypergraph_cover.Algorithm2._
+import progressivecoloring.progressive_coloring
+
 import scala.io.Source
 //Import all enumerator functions
 import enumerator.distributed_enumerator._
@@ -884,7 +889,10 @@ object test3 extends App {
   var t = 2
   var v = 2
 
-  val tests = distributed_graphcoloring(n, t, v, sc, 500, "KP") //4000 pour 100 2 2
+  progressive_coloring.debug = true //activate debug mode
+  val tests = distributed_graphcoloring(n, t, v, sc, 6, "KP") //4000 pour 100 2 2
+
+
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
   tests foreach (utils.print_helper(_))
@@ -911,4 +919,26 @@ object test3 extends App {
   //        remainingCombos.collect().foreach( utils.print_helper(_))
 
 }
+
+//Petit test pour l'exemple Enumerator
+object test4 extends App {
+
+  //Activate debug mode
+  distributed_enumerator.debug = true
+
+  val conf = new SparkConf().setMaster("local[1]").setAppName("Combination generator").set("spark.driver.maxResultSize", "0")
+    .set("spark.checkpoint.compress", "true")
+  val sc = new SparkContext(conf)
+  sc.setLogLevel("OFF")
+
+  var n = 4
+  var t = 2
+  var v = 2
+
+
+  val tests = distributed_enumerator.generateValueCombinations(sc, n, t, v)
+
+
+}
+
 

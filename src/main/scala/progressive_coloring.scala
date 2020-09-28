@@ -2,11 +2,15 @@ package progressivecoloring
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
+
 import scala.util.Random
 import ordercoloring.OrderColoring.isAdjacent
 import ordercoloring.OrderColoring.coloringToTests
+import utils.utils
 
 object progressive_coloring extends Serializable {
+
+  var debug = false
 
   /**
     * Fold lookup table b inside lookup table a
@@ -215,14 +219,36 @@ object progressive_coloring extends Serializable {
     //checkpoint to HDFS or on a ssd drive would also work
     val seed = System.nanoTime()
 
+
+    //Print the combos 1 time
+    if (debug == true) {
+      println("Printing combos before shuffle")
+      combos.collect().foreach(utils.print_helper(_))
+    }
+
+
     //Shuffle the combos before. Doing this ensures a different result every run.
     var mycombos = combos.mapPartitions(it => {
       Random.setSeed(seed)
       Random.shuffle(it)
     }, true)
 
+    //Print the combos 1 time
+    if (debug == true) {
+      println("Printing combos after shuffle")
+      mycombos.collect().foreach(utils.print_helper(_))
+    }
+
     //TODO : Color 100 000 vertex first before doing the rest.
     val combosNumbered = mycombos.zipWithIndex().cache() //needs cache or localcheckpoint here. We cannot regenerate this!
+
+
+    //Print the combos 1 time
+    if (debug == true) {
+      println("Printing combos after numbering")
+      combosNumbered.collect().foreach(e => print(e._2 + " ") + utils.print_helper(e._1))
+    }
+
 
     //Before everything, we can color the first vertex with the color 1
     colors(0) = 1
@@ -243,6 +269,8 @@ object progressive_coloring extends Serializable {
 
       //Calculate the step using our current position and the amount of available memory.
       step = determineStep(memory, i) //petit bug, grands nombres?
+      if (debug == true) step = 6
+
       println(s"Currently working with a chunk of the graph with $step vertices. The chunk weights $memory megabytes")
 
       //Filter the combos we color in the next OrderColoring iteration
@@ -253,8 +281,30 @@ object progressive_coloring extends Serializable {
         else None
       }).collect()
 
+
+      //Print the combos now that they are shuffled (Debug mode)
+      if (debug == true) {
+        someCombos.foreach(e => {
+          print(e._2 + " ")
+          utils.print_helper(e._1)
+        })
+      }
+
+
       //Generate the adjlists for every combo in that list
-      val r1 = genadjlist_hashtableReduceByKey(i, step, combosNumbered, someCombos, sc).cache()
+      val r1: RDD[(Long, Array[Byte])] = genadjlist_hashtableReduceByKey(i, step, combosNumbered, someCombos, sc).cache()
+
+      if (debug == true) {
+        println("\n\n")
+        var printed = r1.collect().sortBy(_._1)
+        //Return the sorted adjacency list, to be used by the order colouring algorithm.
+        println(s"Printing the adjmatrix for $i")
+        printed.foreach(e => {
+          print(e._1 + " ")
+          e._2.foreach(b => print(b))
+          print("\n")
+        })
+      }
 
       //Color the graph using these combos
       import newalgo._

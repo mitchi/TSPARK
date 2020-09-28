@@ -177,6 +177,29 @@ object TSPARK {
 
     choice match {
 
+      //Distributed IPOG Coloring
+      case Some(D_ipog_coloring) => {
+
+        val n = D_ipog_coloring.n
+        val t = D_ipog_coloring.t
+        val v = D_ipog_coloring.v
+
+        var hstep = D_ipog_coloring.hstep
+        var verify = D_ipog_coloring.verify
+        val colorings = D_ipog_coloring.colorings
+
+        val tests = distributed_ipog_coloring(n, t, v, sc)
+
+        //Verify the test suite (optional)
+        if (verify == true) {
+          val combos = fastGenCombos(n, t, v, sc)
+          val a = verifyTS(combos, tests, sc)
+          if (a == true) println("Test suite is verified")
+          else println("This test suite does not cover the combos")
+        }
+
+      }
+
       //Distributed IPOG Hypergraph
       case Some(D_ipog_hypergraph) => {
 
