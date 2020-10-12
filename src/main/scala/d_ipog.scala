@@ -1,7 +1,7 @@
 package ipog
 
 import cmdline.resume_info
-import enumerator.distributed_enumerator.{fastGenCombos, genPartialCombos}
+import enumerator.distributed_enumerator.{fastGenCombos, genPartialCombos, genPartialCombos2}
 import central.gen._
 import org.apache.spark.SparkContext
 import org.apache.spark.storage.StorageLevel
@@ -10,6 +10,8 @@ import utils.utils
 
 object d_ipog {
 
+
+  var debug = false //debug global variable
 
   /**
     * A hybrid IPOG (Distributed Horizontal Growth + Distributed Graph Coloring) that covers M tests at a time during set cover. M value is determined at runtime.
@@ -54,6 +56,11 @@ object d_ipog {
 
     var t1 = System.nanoTime()
 
+    if (debug == true) {
+      println("Printing the initial test suite...")
+      tests.foreach(utils.print_helper(_))
+    }
+
     loop
 
     //Cover all the remaining parameters
@@ -62,10 +69,15 @@ object d_ipog {
       if (i + t == n) return
 
       println("Currently covering parameter : " + (i + t + 1))
-      var newCombos = genPartialCombos(i + t, t - 1, v, sc).persist(StorageLevel.MEMORY_AND_DISK)
+      var newCombos = genPartialCombos2(i + t, t - 1, v, sc).persist(StorageLevel.MEMORY_AND_DISK)
 
-      println(s" ${newCombos.count()} combos to cover by setcover_m_progressive")
+      println(s" ${newCombos.count()} combos to cover")
       println(s" we currently have ${tests.size} tests")
+
+      if (debug == true) {
+        println("Printing the partial combos...")
+        newCombos.collect().foreach(utils.print_helper(_))
+      }
 
       //Apply horizontal growth
       // val r1 = setcover_m_progressive(tests, newCombos, v, t, sc)
@@ -74,10 +86,21 @@ object d_ipog {
       newCombos = r1._2 //Retrieve the combos that are not covered
       tests = r1._1 //Replace the tests
 
+      if (debug == true) {
+        println("Printing the tests after horizontal growth...")
+        tests.foreach(utils.print_helper(_))
+      }
+
       println(s" ${newCombos.count()} combos remaining , sending to graph coloring")
 
       //If there are still combos left to cover, apply a vertical growth algorithm
       if (newCombos.isEmpty() == false) {
+
+        if (debug == true) {
+          println("Printing the remaining combos...")
+          newCombos.collect().foreach(utils.print_helper(_))
+        }
+
         tests = updateTestColoring(tests, newCombos, sc, v)
       }
 

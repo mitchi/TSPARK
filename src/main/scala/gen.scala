@@ -850,7 +850,7 @@ object test3 extends App {
   //voir https://docs.oracle.com/javase/8/docs/technotes/guides/vm/gctuning/collectors.html
   import gen._
 
-  val conf = new SparkConf().setMaster("local[1]").setAppName("Combination generator").set("spark.driver.maxResultSize", "0")
+  val conf = new SparkConf().setMaster("local[2]").setAppName("Combination generator").set("spark.driver.maxResultSize", "0")
     .set("spark.checkpoint.compress", "true")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
@@ -925,6 +925,7 @@ object test4 extends App {
 
   //Activate debug mode
   distributed_enumerator.debug = true
+  ipog.d_ipog.debug = true
 
   val conf = new SparkConf().setMaster("local[1]").setAppName("Combination generator").set("spark.driver.maxResultSize", "0")
     .set("spark.checkpoint.compress", "true")
@@ -935,8 +936,9 @@ object test4 extends App {
   var t = 2
   var v = 2
 
+  val tests = ipog.d_ipog.distributed_ipog_coloring(n, t, v, sc)
 
-  val tests = distributed_enumerator.generateValueCombinations(sc, n, t, v)
+  //val tests = distributed_enumerator.generateValueCombinations(sc, n, t, v)
 
 
 }

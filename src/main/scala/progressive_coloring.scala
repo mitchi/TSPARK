@@ -8,6 +8,9 @@ import ordercoloring.OrderColoring.isAdjacent
 import ordercoloring.OrderColoring.coloringToTests
 import utils.utils
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
 object progressive_coloring extends Serializable {
 
   var debug = false
@@ -192,14 +195,112 @@ object progressive_coloring extends Serializable {
       //Return an iterator here
     })
 
+
     //Fuse the sets
     val r2: RDD[(Long, Array[Byte])] = r1.flatMap(e => e)
+
+    //Debug mode. We print the adjacency lists
+    val d1 = r2.mapPartitionsWithIndex((partition, it) => {
+
+      var output = ""
+      output += "Partition " + partition + "\n"
+      it.foreach(e => {
+        output += e._1 + " "
+        e._2.foreach(b => output += b)
+        output += "\n"
+      })
+
+      Iterator(output)
+    }).collect().foreach(println)
+
+
     val r3 = r2.reduceByKey((a, b) => {
       fuseadjlists(a, b)
     })
 
     r3
   }
+
+
+  /** We assign  numbers to the clauses. We make sure that the numbers are spread out over the partitions.
+    *
+    * @param combos
+    */
+  def assign_numberClauses(combos: RDD[Array[Char]], sc: SparkContext) = {
+
+    //Grab the number of combos per partition. Make it a map
+    val sizes: Array[Int] = combos.mapPartitionsWithIndex((partition, iterator) => {
+      Iterator(Tuple2(partition, iterator.size))
+    }).collect().sortBy(_._1).map(e => e._2)
+
+    val numberPartitions = sizes.length
+
+    //We define this helper function right away
+    def getNextPartition(current: Int): Int = {
+      if (current == numberPartitions - 1) return 0
+      else return current + 1
+    }
+
+    //Array that contains the results. Left is partition, Right is number
+    var results = new ArrayBuffer[Tuple2[Int, Long]]()
+
+    //Alternate the numbering for the partitions, and take in consideration the partition sizes
+    val count = combos.count()
+
+    var i = 0 //numbering starts at 0
+    var j = 0 //first partition is 0 too
+    //Alternate the placement of numbers
+    //Algorithm : We place the number in the partition if there is still enough space in the partition. If there is not,
+    //we move to the next partition
+    loop
+
+    def loop(): Unit = {
+
+      while (true) {
+
+        if (i == count) return //biggest number reached
+
+        //Check if the partition is okay too
+        if (sizes(j) == 0) {
+          j = getNextPartition(j)
+        }
+
+        //There are numbers remaining in this partition. Add the result and continue to to next number, and the next partition
+        else {
+          sizes(j) -= 1 //decrease the quantity remaining in the partition
+          results += Tuple2(j, i.toLong)
+          i += 1
+          j = getNextPartition(j)
+        }
+
+      }
+
+    }
+
+    //Bcast variable
+    val bcast = sc.broadcast(results)
+
+    val numberedCombos: RDD[(Array[Char], Long)] = combos.mapPartitionsWithIndex((partitionNo, it) => {
+
+      //Just grab the numbers here
+      val numbers: Seq[Long] = bcast.value.flatMap(elem => {
+        if (partitionNo == elem._1) Some(elem._2)
+        else None
+      })
+
+      var i = 0
+      val ress = it.map(elem => {
+        val result = (elem, numbers(i))
+        i += 1
+        result
+      })
+      ress
+    })
+
+    //Return ze result
+    numberedCombos
+  }
+
 
   /**
     * Final version of the progressive coloring algorithm
@@ -229,7 +330,12 @@ object progressive_coloring extends Serializable {
 
     //Shuffle the combos before. Doing this ensures a different result every run.
     var mycombos = combos.mapPartitions(it => {
-      Random.setSeed(seed)
+
+      if (debug == true) {
+        Random.setSeed(1)
+      }
+      else Random.setSeed(seed)
+
       Random.shuffle(it)
     }, true)
 
@@ -240,13 +346,24 @@ object progressive_coloring extends Serializable {
     }
 
     //TODO : Color 100 000 vertex first before doing the rest.
-    val combosNumbered = mycombos.zipWithIndex().cache() //needs cache or localcheckpoint here. We cannot regenerate this!
+    //val combosNumbered = mycombos.zipWithIndex().cache()
+    val combosNumbered = assign_numberClauses(mycombos, sc).cache()
+    //needs cache or localcheckpoint here. We cannot regenerate this!
 
 
     //Print the combos 1 time
     if (debug == true) {
       println("Printing combos after numbering")
-      combosNumbered.collect().foreach(e => print(e._2 + " ") + utils.print_helper(e._1))
+
+      combosNumbered.mapPartitionsWithIndex((index, iterator) => {
+        var stringPartition = ""
+        stringPartition += "Partition " + index + "\n"
+        iterator.foreach(e => {
+          stringPartition += e._2 + " " + utils.print_helper2(e._1) + "\n"
+        })
+        Iterator(stringPartition)
+      }).collect().foreach(println)
+      // combosNumbered.collect().foreach(e => print(e._2 + " ") + utils.print_helper(e._1))
     }
 
 
@@ -279,8 +396,7 @@ object progressive_coloring extends Serializable {
           Some(elem)
         }
         else None
-      }).collect()
-
+      }).collect().sortBy(_._2)
 
       //Print the combos now that they are shuffled (Debug mode)
       if (debug == true) {
@@ -289,7 +405,6 @@ object progressive_coloring extends Serializable {
           utils.print_helper(e._1)
         })
       }
-
 
       //Generate the adjlists for every combo in that list
       val r1: RDD[(Long, Array[Byte])] = genadjlist_hashtableReduceByKey(i, step, combosNumbered, someCombos, sc).cache()

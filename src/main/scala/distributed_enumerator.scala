@@ -521,6 +521,41 @@ object distributed_enumerator extends Serializable {
     r4
   }
 
+  /**
+    * Algorithm : Generate t-1 combos, with the last parameter always being active.
+    * To do this, we can generate combos as usual, but we remove any combo without the last parameter being active.
+    *
+    **/
+
+  def genPartialCombos2(n: Int, t: Int, v: Int, sc: SparkContext): RDD[Array[Char]] = {
+
+    import utils.utils.print_helper
+
+    val steps = generate_all_steps(n, t)
+
+    if (debug == true) {
+      println("Printing steps")
+      steps.foreach(e => print_helper(e.startingpv))
+    }
+
+    val r1 = sc.makeRDD(steps) //Parallelize the steps
+    val r2: RDD[Array[Char]] = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
+    //Add the next parameter
+
+
+    val r3: RDD[Array[Char]] = r2.map(growby1(_, '1')) //Add 1 to all parameter vectors
+
+    if (debug == true) {
+      println("Printing proper parameter vectors here...")
+      r3.collect().foreach(print_helper(_))
+    }
+
+    val r4 = r3.flatMap(pv => generate_vc(pv, t + 1, v)) //Generate the tway combos
+
+    r4
+  }
+
+
 
   /**
     * This function generates the t-way combos if you give the right parameters.

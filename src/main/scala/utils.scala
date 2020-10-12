@@ -76,7 +76,8 @@ This function generates a random sequence of numbers of the desired interval and
   /**
     * Just returns a string
     */
-  def print_helper2(e: Array[Char], additional: String = ""): String = {
+  def
+  print_helper2(e: Array[Char], additional: String = ""): String = {
     var emptyString = ""
     e.foreach(c => {
       emptyString += c
