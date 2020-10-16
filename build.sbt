@@ -12,6 +12,10 @@ libraryDependencies ++= Seq(
   "org.backuity.clist" %% "clist-macros" % "3.5.1" % "provided")
 
 
+// https://mvnrepository.com/artifact/org.roaringbitmap/RoaringBitmap
+//libraryDependencies += "org.roaringbitmap" % "RoaringBitmap" % "0.9.0"
+
+
 mainClass in assembly := Some("cmdlineparser.TSPARK")
 
 assemblyMergeStrategy in assembly := {

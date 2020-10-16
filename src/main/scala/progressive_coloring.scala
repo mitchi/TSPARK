@@ -195,11 +195,11 @@ object progressive_coloring extends Serializable {
       //Return an iterator here
     })
 
-
     //Fuse the sets
-    val r2: RDD[(Long, Array[Byte])] = r1.flatMap(e => e)
+    val r2: RDD[(Long, Array[Byte])] = r1.flatMap(e => e).cache()
 
     //Debug mode. We print the adjacency lists
+    if (debug == true) {
     val d1 = r2.mapPartitionsWithIndex((partition, it) => {
 
       var output = ""
@@ -212,11 +212,25 @@ object progressive_coloring extends Serializable {
 
       Iterator(output)
     }).collect().foreach(println)
-
+    }
 
     val r3 = r2.reduceByKey((a, b) => {
       fuseadjlists(a, b)
     })
+
+    if (debug == true) {
+      println("Fused adjlists")
+      val d2 = r3.mapPartitionsWithIndex((partition, it) => {
+        var output = ""
+        output += "Partition " + partition + "\n"
+        it.foreach(e => {
+          output += e._1 + " "
+          e._2.foreach(b => output += b)
+          output += "\n"
+        })
+        Iterator(output)
+      }).collect().foreach(println)
+    }
 
     r3
   }
