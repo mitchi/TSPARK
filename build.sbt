@@ -13,7 +13,7 @@ libraryDependencies ++= Seq(
 
 
 // https://mvnrepository.com/artifact/org.roaringbitmap/RoaringBitmap
-//libraryDependencies += "org.roaringbitmap" % "RoaringBitmap" % "0.9.0"
+libraryDependencies += "org.roaringbitmap" % "RoaringBitmap" % "0.9.0"
 
 
 mainClass in assembly := Some("cmdlineparser.TSPARK")

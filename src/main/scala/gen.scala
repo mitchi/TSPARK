@@ -2,6 +2,8 @@
 
 package central
 
+import central.gen.distributed_graphcoloring
+import central.test3.sc
 import enumerator.distributed_enumerator
 import ordercoloring.OrderColoring.orderColoring
 import org.apache.spark.broadcast.Broadcast
@@ -17,6 +19,9 @@ import scala.io.Source
 import enumerator.distributed_enumerator._
 import progressivecoloring.progressive_coloring._
 import utils._
+
+import roaringcoloring.roaring_coloring.coloring_roaring
+
 
 
 //If lastPV is set to true, this means that this is the last step
@@ -653,8 +658,6 @@ object gen extends Serializable {
   }
 
 
-
-
   /**
     * The distributed graph coloring algorithm
     *
@@ -679,12 +682,57 @@ object gen extends Serializable {
     var t1 = System.nanoTime()
 
     val tests = progressivecoloring_final(fastGenCombos(n, t, v, sc), sc, memory, algorithm) //4000 pour 100 2 2
+    //val tests = coloring_roaring(fastGenCombos(n, t, v, sc), sc, memory, algorithm)
 
     var t2 = System.nanoTime()
     var time_elapsed = (t2 - t1).toDouble / 1000000000
 
     pw.append(s"$t;$n;$v;GRAPHCOLORING;$time_elapsed;${tests.size}\n")
     println(s"$t;$n;$v;GRAPHCOLORING;$time_elapsed;${tests.size}\n")
+    pw.flush()
+
+    //If the option to save to a text file is activated
+    if (save == true) {
+      println(s"Saving the test suite to a file named $t;$n;$v.txt")
+      //Save the test suite to file
+      saveTestSuite(s"$t;$n;$v.txt", tests)
+    }
+
+    //Return the test suite
+    tests
+  }
+
+
+  /**
+    * The distributed graph coloring algorithm with roaring bitmaps
+    *
+    * @param n
+    * @param t
+    * @param v
+    * @param sc
+    * @return
+    */
+  def distributed_graphcoloring_roaring(n: Int, t: Int, v: Int, sc: SparkContext,
+                                        memory: Int = 4000, algorithm: String = "OrderColoring"): Array[Array[Char]] = {
+    val expected = utils.numberTWAYCombos(n, t, v)
+    println("Distributed Graph Coloring with Roaring bitmaps")
+    println(s"Using memory = $memory megabytes and algorithm = $algorithm")
+    println(s"Problem : n=$n,t=$t,v=$v")
+    println(s"Expected number of combinations is : $expected ")
+    println(s"Formula is C($n,$t) * $v^$t")
+
+    import java.io._
+    val pw = new PrintWriter(new FileOutputStream(filename, true))
+
+    var t1 = System.nanoTime()
+
+    val tests = coloring_roaring(fastGenCombos(n, t, v, sc), sc, memory, algorithm)
+
+    var t2 = System.nanoTime()
+    var time_elapsed = (t2 - t1).toDouble / 1000000000
+
+    pw.append(s"$t;$n;$v;GRAPHCOLORING_ROARING;$time_elapsed;${tests.size}\n")
+    println(s"$t;$n;$v;GRAPHCOLORING_ROARING;$time_elapsed;${tests.size}\n")
     pw.flush()
 
     //If the option to save to a text file is activated
@@ -885,12 +933,12 @@ object test3 extends App {
   // tests foreach (utils.print_helper(_))
   import progressivecoloring.progressive_coloring._
   //
-  var n = 3
+  var n = 100
   var t = 2
   var v = 2
 
-  progressive_coloring.debug = true //activate debug mode
-  val tests = distributed_graphcoloring(n, t, v, sc, 6, "KP") //4000 pour 100 2 2
+  //progressive_coloring.debug = true //activate debug mode
+  val tests = distributed_graphcoloring(n, t, v, sc, 6, "OC") //4000 pour 100 2 2
 
 
   println("We have " + tests.size + " tests")
@@ -944,3 +992,24 @@ object test4 extends App {
 }
 
 
+object test5 extends App {
+
+  import gen.distributed_graphcoloring_roaring
+
+  val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
+    .set("spark.checkpoint.compress", "true")
+  val sc = new SparkContext(conf)
+  sc.setLogLevel("OFF")
+
+  var n = 100
+  var t = 2
+  var v = 2
+
+  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 5000, "OC") //4000 pour 100 2 2
+
+  println("We have " + tests.size + " tests")
+  println("Printing the tests....")
+  tests foreach (utils.print_helper(_))
+
+
+}
