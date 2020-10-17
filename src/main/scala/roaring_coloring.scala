@@ -199,6 +199,13 @@ object roaring_coloring extends Serializable {
       //Generate the adjlists for every combo in that list
       val r1 = genadjlist_roaring(i, step, combosNumbered, someCombos, sc).cache()
 
+      //Print the types of the adjlists
+      import org.roaringbitmap.insights.BitmapAnalyser._
+      r1.collect().foreach(elem => {
+        val rr = analyse(elem._2)
+        println(rr.toString)
+      })
+
       if (debug == true) {
         println("\n\n")
         var printed = r1.collect().sortBy(_._1)
