@@ -6,7 +6,6 @@ import org.apache.spark.rdd.RDD
 import scala.util.Random
 import ordercoloring.OrderColoring.isAdjacent
 import ordercoloring.OrderColoring.coloringToTests
-import org.roaringbitmap.Util
 import utils.utils
 
 import scala.collection.mutable

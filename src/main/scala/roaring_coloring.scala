@@ -219,9 +219,7 @@ object roaring_coloring extends Serializable {
       //Use KP when the graph is sparse (not dense)
       val r2 =
         if (algorithm == "KP") {
-          //progressive_kp.progressiveKP(colors, r1, r1.count().toInt, maxColor, sc)
-          println("A faire KP")
-          ordercoloring(colors, r1.collect().sortBy(_._1), i, maxColor)
+          roaringkp.roaringkp.progressiveKP(colors, r1, r1.count().toInt, maxColor, sc)
         }
         else { //algorithm = "OC". The single threaded needs a sorted matrix of adjlists
           ordercoloring(colors, r1.collect().sortBy(_._1), i, maxColor)

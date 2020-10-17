@@ -933,12 +933,12 @@ object test3 extends App {
   // tests foreach (utils.print_helper(_))
   import progressivecoloring.progressive_coloring._
   //
-  var n = 100
+  var n = 3
   var t = 2
   var v = 2
 
   //progressive_coloring.debug = true //activate debug mode
-  val tests = distributed_graphcoloring(n, t, v, sc, 6, "OC") //4000 pour 100 2 2
+  val tests = distributed_graphcoloring(n, t, v, sc, 6, "KP") //4000 pour 100 2 2
 
 
   println("We have " + tests.size + " tests")
@@ -1005,7 +1005,7 @@ object test5 extends App {
   var t = 2
   var v = 2
 
-  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 5000, "OC") //4000 pour 100 2 2
+  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 50, "OC") //4000 pour 100 2 2
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
