@@ -148,10 +148,10 @@ object roaringkp extends Serializable {
     } //def loop here
 
     iterationCounter -= 1
-    println(s"colored the chunk in $iterationCounter iterations")
+    //println(s"colored the chunk in $iterationCounter iterations")
 
-    //Return the new array of colors, and the currentMaxColor
-    (colors, currentMaxColor)
+    //Return the iteration counter and the maxCounter
+    (iterationCounter, currentMaxColor)
   }
 
 }

@@ -35,6 +35,29 @@ object TSPARK {
     var filename = arg[String](name = "filename", description = "file name of the .dot file")
   }
 
+  //Nouvel objet pour Distributed IPOG avec Roaring
+  object D_ipog_coloring_roaring extends Command(name = "dicr",
+    description = "Distributed Ipog-coloring") with CommonOpt {
+
+    var t = arg[Int](name = "t",
+      description = "interaction strength")
+
+    var n = arg[Int](name = "n",
+      description = "number of parameters")
+
+    var v = arg[Int](name = "v",
+      description = "domain size")
+
+    var hstep = opt[Int](name = "hstep", description = "Number of parameters of tests to extend in parallel", default = -1)
+    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
+    var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
+    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Use a bigger chunk if you have more RAM", default = 20000)
+    var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run (when using OC)", default = 0)
+
+    var seeding = opt[String](name = "seeding", description = "Seeding at param,file", default = "")
+
+  }
+
  //Single threaded coloring with Order Coloring
   object Color extends Command(name = "color",
     description = "single threaded graph coloring") with CommonOpt {
@@ -69,7 +92,6 @@ object TSPARK {
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
     var st = opt[Boolean](name = "st", abbrev = "s", description = "use single threaded coloring")
     var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run", default = 6)
-
   }
 
   object D_ipog_hypergraph extends Command(name = "dih",
@@ -88,7 +110,6 @@ object TSPARK {
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
     var vstep = opt[Int](name = "vstep", description = "Covering speed (optional)", default = -1)
   }
-
 
   //Distributed Graph Coloring
   object Coloring extends Command(name = "dcolor", description = "distributed graph coloring") with CommonOpt {
@@ -159,7 +180,7 @@ object TSPARK {
       .version("1.0.0")
       .withProgramName("TSPARK")
       .withDescription("a distributed testing tool")
-      .withCommands(Graphviz, edn, Color, D_ipog_coloring, D_ipog_hypergraph, Coloring, Hypergraphcover, Tway, Pv)
+      .withCommands(Graphviz, edn, Color, D_ipog_coloring, D_ipog_coloring_roaring, D_ipog_hypergraph, Coloring, Hypergraphcover, Tway, Pv)
 
 
     //Create the Spark Context if it does not already exist
@@ -174,8 +195,42 @@ object TSPARK {
     import central.gen.distributed_graphcoloring
     import ipog.d_ipog._
     import utils.utils.print_combos_in_order
+    import ipog.d_ipog_roaring.distributed_ipog_coloring_roaring
 
     choice match {
+
+      //Distributed IPOG Coloring roaring bitmaps
+      case Some(D_ipog_coloring_roaring) => {
+
+        val n = D_ipog_coloring_roaring.n
+        val t = D_ipog_coloring_roaring.t
+        val v = D_ipog_coloring_roaring.v
+
+        var hstep = D_ipog_coloring_roaring.hstep
+        var verify = D_ipog_coloring_roaring.verify
+        val colorings = D_ipog_coloring_roaring.colorings
+        var chunkSize = D_ipog_coloring_roaring.chunkSize
+        var algorithm = D_ipog_coloring_roaring.algorithm
+
+
+        import cmdline.MainConsole.readSeeding
+        import cmdline.resume_info
+        var seeding = D_ipog_coloring_roaring.seeding
+
+        val resume = if (seeding != "") {
+          Some(readSeeding(seeding))
+        } else None
+
+        val tests = distributed_ipog_coloring_roaring(n, t, v, sc, colorings, hstep, resume, chunkSize, algorithm)
+
+        //Verify the test suite (optional)
+        if (verify == true) {
+          val combos = fastGenCombos(n, t, v, sc)
+          val a = verifyTS(combos, tests, sc)
+          if (a == true) println("Test suite is verified")
+          else println("This test suite does not cover the combos")
+        }
+      }
 
       //Distributed IPOG Coloring
       case Some(D_ipog_coloring) => {
@@ -197,7 +252,6 @@ object TSPARK {
           if (a == true) println("Test suite is verified")
           else println("This test suite does not cover the combos")
         }
-
       }
 
       //Distributed IPOG Hypergraph

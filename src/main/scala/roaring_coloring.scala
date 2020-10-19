@@ -71,8 +71,8 @@ object roaring_coloring extends Serializable {
       loop
     }
 
-    //Max color is used when the graph is small
-    (colors, currentMaxColor)
+    //Return the number of iterations we did, and the maxColor
+    (limit, currentMaxColor)
   }
 
   /**
@@ -100,10 +100,10 @@ object roaring_coloring extends Serializable {
     *
     * @param combos the RDD of combos
     * @param sc     SparkContext
-    * @param memory the number of megabytes of memory to store adjlists
+    * @param step   the number of vertices to move at the same time. Memory should increase with each iteration
     * @return
     */
-  def coloring_roaring(combos: RDD[Array[Char]], sc: SparkContext, memory: Int, algorithm: String = "OrderColoring") = {
+  def coloring_roaring(combos: RDD[Array[Char]], sc: SparkContext, step: Int, algorithm: String = "OrderColoring") = {
     //First, color 100 000 elements. If the graph is colored, we return. Else we continue here.
     val count = combos.count()
     val colors = new Array[Int](count.toInt) //colors for every vertex, starting at 0. We pass this data structure around and modify it
@@ -111,6 +111,8 @@ object roaring_coloring extends Serializable {
     //Save the seed so that Spark can regenerate the combos on demand. This would save memory but add CPU time
     //checkpoint to HDFS or on a ssd drive would also work
     val seed = System.nanoTime()
+
+    var totalIterations = 0
 
     //Print the combos 1 time
     if (debug == true) {
@@ -162,7 +164,7 @@ object roaring_coloring extends Serializable {
     var maxColor = 1
     var i = 1 //the number of vertices we have colored
 
-    var step = 0 //calculated value
+    //var step = 0 //calculated value
     var chunkNo = 0
 
     loop
@@ -175,10 +177,10 @@ object roaring_coloring extends Serializable {
       if (i >= count) return //if we have colored everything, we are good to go
 
       //Calculate the step using our current position and the amount of available memory.
-      step = determineStep(memory, i) //petit bug, grands nombres?
-      if (debug == true) step = 6
+      //step = determineStep(memory, i) //petit bug, grands nombres?
+      //if (debug == true) step = 6
 
-      println(s"Currently working with a chunk of the graph with $step vertices. The chunk weights $memory megabytes")
+      println(s"Currently working with a chunk of the graph with $step vertices.")
 
       //Filter the combos we color in the next OrderColoring iteration
       val someCombos = combosNumbered.flatMap(elem => {
@@ -199,12 +201,14 @@ object roaring_coloring extends Serializable {
       //Generate the adjlists for every combo in that list
       val r1 = genadjlist_roaring(i, step, combosNumbered, someCombos, sc).cache()
 
-      //Print the types of the adjlists
-      import org.roaringbitmap.insights.BitmapAnalyser._
-      r1.collect().foreach(elem => {
-        val rr = analyse(elem._2)
-        println(rr.toString)
-      })
+      //Print the types of the roaring bitmaps
+      if (debug == true) {
+        import org.roaringbitmap.insights.BitmapAnalyser._
+        r1.collect().foreach(elem => {
+          val rr = analyse(elem._2)
+          println(rr.toString)
+        })
+      }
 
       if (debug == true) {
         println("\n\n")
@@ -220,9 +224,6 @@ object roaring_coloring extends Serializable {
         })
       }
 
-      //Color the graph using these combos
-      import newalgo._
-
       //Use KP when the graph is sparse (not dense)
       val r2 =
         if (algorithm == "KP") {
@@ -233,13 +234,16 @@ object roaring_coloring extends Serializable {
         }
 
       //Update the max color
+      totalIterations += r2._1
       maxColor = r2._2
       r1.unpersist(true)
       i += step
 
-
       loop
     }
+
+    val percent = ((totalIterations.toDouble / count.toDouble) * 100)
+    println(s"We did a total of $totalIterations iterations, which is $percent% of total")
 
     //Create tests now
     val bcastcolors = sc.broadcast(colors)
@@ -314,7 +318,7 @@ object roaring_coloring extends Serializable {
     })
 
     //Fuse the sets
-    val r2 = r1.flatMap(e => e).cache()
+    val r2 = r1.flatMap(e => e) //.cache
 
     // Debug mode. We print the adjacency lists
     if (debug == true) {
@@ -361,6 +365,5 @@ object roaring_coloring extends Serializable {
     }
     r4
   }
-
 
 }

@@ -713,10 +713,10 @@ object gen extends Serializable {
     * @return
     */
   def distributed_graphcoloring_roaring(n: Int, t: Int, v: Int, sc: SparkContext,
-                                        memory: Int = 4000, algorithm: String = "OrderColoring"): Array[Array[Char]] = {
+                                        step: Int = 4000, algorithm: String = "OrderColoring"): Array[Array[Char]] = {
     val expected = utils.numberTWAYCombos(n, t, v)
     println("Distributed Graph Coloring with Roaring bitmaps")
-    println(s"Using memory = $memory megabytes and algorithm = $algorithm")
+    println(s"Using step = $step vertices and algorithm = $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
     println(s"Expected number of combinations is : $expected ")
     println(s"Formula is C($n,$t) * $v^$t")
@@ -726,7 +726,7 @@ object gen extends Serializable {
 
     var t1 = System.nanoTime()
 
-    val tests = coloring_roaring(fastGenCombos(n, t, v, sc), sc, memory, algorithm)
+    val tests = coloring_roaring(fastGenCombos(n, t, v, sc), sc, step, algorithm)
 
     var t2 = System.nanoTime()
     var time_elapsed = (t2 - t1).toDouble / 1000000000
@@ -995,21 +995,30 @@ object test4 extends App {
 object test5 extends App {
 
   import gen.distributed_graphcoloring_roaring
+  import ipog.d_ipog_roaring.distributed_ipog_coloring_roaring
+  import gen.verifyTestSuite
+  import ipog.d_ipog.distributed_ipog_coloring
 
   val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
     .set("spark.checkpoint.compress", "true")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 3
-  var t = 2
-  var v = 2
+  var n = 10
+  var t = 7
+  var v = 3
 
-  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 200, "OC") //4000 pour 100 2 2
+  //val tests = distributed_graphcoloring_roaring(n, t, v, sc, 20000, "KP") //4000 pour 100 2 2
+  //val tests = distributed_ipog_coloring_roaring(n,t,v,sc, 0, -1, None, 20000, "OC")
+  val tests = distributed_ipog_coloring(n, t, v, sc, 6, -1)
+
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
   tests foreach (utils.print_helper(_))
+
+  println("\n\nVerifying test suite ... ")
+  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
 
 
 }
