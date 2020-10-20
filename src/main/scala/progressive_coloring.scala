@@ -13,7 +13,7 @@ import scala.collection.mutable.ArrayBuffer
 
 object progressive_coloring extends Serializable {
 
-  var debug = false
+  var debug = true
 
   /**
     * Fold lookup table b inside lookup table a

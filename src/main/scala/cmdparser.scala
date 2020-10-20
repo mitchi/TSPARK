@@ -180,7 +180,7 @@ object TSPARK {
       .version("1.0.0")
       .withProgramName("TSPARK")
       .withDescription("a distributed testing tool")
-      .withCommands(Graphviz, edn, Color, D_ipog_coloring, D_ipog_coloring_roaring, D_ipog_hypergraph, Coloring, Hypergraphcover, Tway, Pv)
+      .withCommands(Graphviz, edn, Color, D_ipog_coloring_roaring, D_ipog_hypergraph, Coloring, Hypergraphcover, Tway, Pv)
 
 
     //Create the Spark Context if it does not already exist
@@ -232,7 +232,7 @@ object TSPARK {
         }
       }
 
-      //Distributed IPOG Coloring
+      //Distributed IPOG Coloring CLASSIC (with byte array graphs)
       case Some(D_ipog_coloring) => {
 
         val n = D_ipog_coloring.n
@@ -280,6 +280,7 @@ object TSPARK {
 
 
       //Distributed Graph Coloring
+      //Mise a jour avec roaring bitmaps ici
       case Some(Coloring) => {
 
         val n = Coloring.n
@@ -301,7 +302,6 @@ object TSPARK {
         }
 
       }
-
 
       //Hypergraph cover algorithm
       case Some(Hypergraphcover) => {

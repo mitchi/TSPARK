@@ -140,8 +140,9 @@ object roaring_coloring extends Serializable {
     //TODO : Color 100 000 vertex first before doing the rest.
     //val combosNumbered = mycombos.zipWithIndex().cache()
     val combosNumbered = assign_numberClauses(mycombos, sc).cache()
-    //needs cache or localcheckpoint here. We cannot regenerate this!
 
+    //We no longer need combos
+    combos.unpersist(false)
 
     //Print the combos 1 time
     if (debug == true) {

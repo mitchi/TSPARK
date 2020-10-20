@@ -726,7 +726,7 @@ object gen extends Serializable {
 
     var t1 = System.nanoTime()
 
-    val tests = coloring_roaring(fastGenCombos(n, t, v, sc), sc, step, algorithm)
+    val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, step, algorithm)
 
     var t2 = System.nanoTime()
     var time_elapsed = (t2 - t1).toDouble / 1000000000
@@ -937,7 +937,7 @@ object test3 extends App {
   var t = 2
   var v = 2
 
-  //progressive_coloring.debug = true //activate debug mode
+  progressive_coloring.debug = true //activate debug mode
   val tests = distributed_graphcoloring(n, t, v, sc, 6, "KP") //4000 pour 100 2 2
 
 
@@ -991,7 +991,6 @@ object test4 extends App {
 
 }
 
-
 object test5 extends App {
 
   import gen.distributed_graphcoloring_roaring
@@ -1008,9 +1007,12 @@ object test5 extends App {
   var t = 7
   var v = 3
 
-  //val tests = distributed_graphcoloring_roaring(n, t, v, sc, 20000, "KP") //4000 pour 100 2 2
+  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 20000, "KP") //4000 pour 100 2 2
+
+  //val tests = distributed_graphcoloring(n,t,v,sc, 4000, "OC")
+
   //val tests = distributed_ipog_coloring_roaring(n,t,v,sc, 0, -1, None, 20000, "OC")
-  val tests = distributed_ipog_coloring(n, t, v, sc, 6, -1)
+  //val tests = distributed_ipog_coloring(n, t, v, sc, 6, -1)
 
 
   println("We have " + tests.size + " tests")
