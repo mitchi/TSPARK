@@ -713,10 +713,10 @@ object gen extends Serializable {
     * @return
     */
   def distributed_graphcoloring_roaring(n: Int, t: Int, v: Int, sc: SparkContext,
-                                        step: Int = 4000, algorithm: String = "OrderColoring"): Array[Array[Char]] = {
+                                        chunkSize: Int = 4000, algorithm: String = "OrderColoring"): Array[Array[Char]] = {
     val expected = utils.numberTWAYCombos(n, t, v)
     println("Distributed Graph Coloring with Roaring bitmaps")
-    println(s"Using step = $step vertices and algorithm = $algorithm")
+    println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
     println(s"Expected number of combinations is : $expected ")
     println(s"Formula is C($n,$t) * $v^$t")
@@ -726,7 +726,7 @@ object gen extends Serializable {
 
     var t1 = System.nanoTime()
 
-    val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, step, algorithm)
+    val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, algorithm)
 
     var t2 = System.nanoTime()
     var time_elapsed = (t2 - t1).toDouble / 1000000000

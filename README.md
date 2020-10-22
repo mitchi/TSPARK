@@ -62,9 +62,9 @@ Commands
       <n> : number of parameters
       <v> : domain size
 
-   dcolor [command options] <t> <n> <v> : distributed graph coloring
-      --algorithm=STRING : Algorithm (KP or Order Coloring)
-      --memory=NUM       : memory for the graph structure on the cluster in megabytes
+   dcoloring [command options] <t> <n> <v> : Distributed Graph Coloring
+      --algorithm=STRING : Which algorithm to use (KP or OC)
+      --chunksize=NUM    : Chunk size, in vertices. Default is 20k
       -v, --verify       : verify the test suite
       <t> : interaction strength
       <n> : number of parameters
@@ -77,11 +77,12 @@ Commands
       <n> : number of parameters
       <v> : domain size of a parameter
 
-   dic [command options] <t> <n> <v> : distributed ipog coloring
-      --colorings=NUM : Number of parallel graph colorings to run
-      --hstep=NUM     : Number of parameters of tests to extend in parallel
-      -s, --st        : use single threaded coloring
-      -v, --verify    : verify the test suite
+   dicr [command options] <t> <n> <v> : Distributed Ipog-coloring
+      --algorithm=STRING : Which algorithm to use (KP or OC)
+      --chunksize=NUM    : Chunk size, in vertices. Default is 20k
+      --hstep=NUM        : Number of parameters of tests to extend in parallel
+      --seeding=STRING   : Seeding at param,file
+      -v, --verify       : verify the test suite
       <t> : interaction strength
       <n> : number of parameters
       <v> : domain size
@@ -113,7 +114,7 @@ Commands
       <n> : number of parameters
       <v> : domain size of a parameter
 
-No command found, expected one of color, dcolor, dhgraph, dic, dih, edn, graphviz, pv, tway
+No command found, expected one of color, dcoloring, dhgraph, dicr, dih, edn, graphviz, pv, tway
 ```
 
 

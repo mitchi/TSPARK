@@ -23,18 +23,6 @@ object TSPARK {
 
   //https://docs.scala-lang.org/tour/self-types.html
 
-  object Graphviz extends Command(name = "graphviz", description = "graph coloring from a GraphViz file") with CommonOpt {
-
-    var st = opt[Boolean](name = "st", abbrev = "s", description = "use single threaded coloring")
-    var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run", default = 6)
-    var filename = arg[String](name = "filename", description = "file name of the .dot file")
-    var memory = opt[Int](name = "memory", description = "memory for the graph structure on the cluster in megabytes")
-  }
-
-  object edn extends Command(name = "edn", description = "hypergraph covering from a file (edn format)") {
-    var filename = arg[String](name = "filename", description = "file name of the .dot file")
-  }
-
   //Nouvel objet pour Distributed IPOG avec Roaring
   object D_ipog_coloring_roaring extends Command(name = "dicr",
     description = "Distributed Ipog-coloring") with CommonOpt {
@@ -51,12 +39,45 @@ object TSPARK {
     var hstep = opt[Int](name = "hstep", description = "Number of parameters of tests to extend in parallel", default = -1)
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
     var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
-    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Use a bigger chunk if you have more RAM", default = 20000)
-    var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run (when using OC)", default = 0)
+    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Default is 20k", default = 20000)
+    //var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run (when using OC)", default = 0)
 
     var seeding = opt[String](name = "seeding", description = "Seeding at param,file", default = "")
 
   }
+
+
+  //Distributed Graph Coloring with Roaring Bitmaps
+  object ColoringRoaring extends Command(name = "dcoloring", description = "Distributed Graph Coloring") with CommonOpt {
+
+    var t = arg[Int](name = "t",
+      description = "interaction strength")
+
+    var n = arg[Int](name = "n",
+      description = "number of parameters")
+
+    var v = arg[Int](name = "v",
+      description = "domain size of a parameter")
+
+    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Default is 20k", default = 20000)
+    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
+    var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
+
+  }
+
+  object Graphviz extends Command(name = "graphviz", description = "graph coloring from a GraphViz file") with CommonOpt {
+
+    var st = opt[Boolean](name = "st", abbrev = "s", description = "use single threaded coloring")
+    var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run", default = 6)
+    var filename = arg[String](name = "filename", description = "file name of the .dot file")
+    var memory = opt[Int](name = "memory", description = "memory for the graph structure on the cluster in megabytes")
+  }
+
+  object edn extends Command(name = "edn", description = "hypergraph covering from a file (edn format)") {
+    var filename = arg[String](name = "filename", description = "file name of the .dot file")
+  }
+
+
 
  //Single threaded coloring with Order Coloring
   object Color extends Command(name = "color",
@@ -180,7 +201,7 @@ object TSPARK {
       .version("1.0.0")
       .withProgramName("TSPARK")
       .withDescription("a distributed testing tool")
-      .withCommands(Graphviz, edn, Color, D_ipog_coloring_roaring, D_ipog_hypergraph, Coloring, Hypergraphcover, Tway, Pv)
+      .withCommands(Graphviz, edn, Color, ColoringRoaring, D_ipog_coloring_roaring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
 
 
     //Create the Spark Context if it does not already exist
@@ -208,7 +229,8 @@ object TSPARK {
 
         var hstep = D_ipog_coloring_roaring.hstep
         var verify = D_ipog_coloring_roaring.verify
-        val colorings = D_ipog_coloring_roaring.colorings
+        //val colorings = D_ipog_coloring_roaring.colorings
+        val colorings = 0
         var chunkSize = D_ipog_coloring_roaring.chunkSize
         var algorithm = D_ipog_coloring_roaring.algorithm
 
@@ -267,6 +289,31 @@ object TSPARK {
 
         val tests = distributed_ipog_hypergraph(n, t, v, sc, hstep, vstep)
 
+
+        //Verify the test suite (optional)
+        if (verify == true) {
+          val combos = fastGenCombos(n, t, v, sc)
+          val a = verifyTS(combos, tests, sc)
+          if (a == true) println("Test suite is verified")
+          else println("This test suite does not cover the combos")
+        }
+
+      }
+
+      //Implémentation de ColoringRoaring
+      case Some(ColoringRoaring) => {
+
+        import central.gen.distributed_graphcoloring_roaring
+
+        val n = ColoringRoaring.n
+        val t = ColoringRoaring.t
+        val v = ColoringRoaring.v
+
+        val chunkSize = ColoringRoaring.chunkSize
+        val verify = ColoringRoaring.verify
+        val algorithm = ColoringRoaring.algorithm //Default is OC, Order Coloring
+
+        val tests = distributed_graphcoloring_roaring(n, t, v, sc, chunkSize, algorithm)
 
         //Verify the test suite (optional)
         if (verify == true) {
