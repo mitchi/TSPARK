@@ -1003,11 +1003,11 @@ object test5 extends App {
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 10
-  var t = 7
-  var v = 3
+  var n = 100
+  var t = 2
+  var v = 2
 
-  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 20000, "KP") //4000 pour 100 2 2
+  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 100000, "OC") //4000 pour 100 2 2
 
   //val tests = distributed_graphcoloring(n,t,v,sc, 4000, "OC")
 

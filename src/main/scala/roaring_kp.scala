@@ -56,6 +56,7 @@ object roaringkp extends Serializable {
   def progressiveKP(colors: Array[Int], adjMatrix: RDD[(Long, RoaringBitmap)], remaining: Int,
                     maxColor: Int, sc: SparkContext) = {
 
+
     var iterationCounter = 1
     var currentMaxColor = maxColor
     var remainingToBeColored = remaining //c'est ici le problème

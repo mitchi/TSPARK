@@ -35,6 +35,10 @@ object roaring_coloring extends Serializable {
   def ordercoloring(colors: Array[Int], adjMatrix: Array[(Long, RoaringBitmap)], i: Int,
                     maxColor: Int) = {
 
+    import scala.io.StdIn.readLine
+    println("On pause ici. Va voir la taille du truc dans Spark UI")
+    var temp = readLine()
+
     val limit = adjMatrix.size //the number of iterations we do
     var j = 0 //start coloring using the first adjvector of the adjmatrix
     var currentMaxColor = maxColor
@@ -202,6 +206,8 @@ object roaring_coloring extends Serializable {
       //Generate the adjlists for every combo in that list
       val r1 = genadjlist_roaring(i, step, combosNumbered, someCombos, sc).cache()
 
+
+
       //Print the types of the roaring bitmaps
       if (debug == true) {
         import org.roaringbitmap.insights.BitmapAnalyser._
@@ -271,7 +277,7 @@ object roaring_coloring extends Serializable {
 
     //For every partition, we build a hash table of COMBO -> List of neighbors (all neighbors are strictly less than combo)
     val r1 = combos.mapPartitions(partition => {
-      val hashtable = scala.collection.mutable.HashMap.empty[Long, RoaringBitmap]
+      val hashtable = scala.collection.mutable.Map.empty[Long, RoaringBitmap]
 
       partition.foreach(elem => {
         val thisId = elem._2
