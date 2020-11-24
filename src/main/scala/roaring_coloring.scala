@@ -4,13 +4,14 @@ import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 import utils.utils
-
 import progressivecoloring.progressive_coloring.assign_numberClauses
 import progressivecoloring.progressive_coloring.determineStep
-import scala.util.Random
 
+import scala.util.Random
 import ordercoloring.OrderColoring.isAdjacent
 import ordercoloring.OrderColoring.coloringToTests
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
   * Bon lien:
@@ -35,9 +36,9 @@ object roaring_coloring extends Serializable {
   def ordercoloring(colors: Array[Int], adjMatrix: Array[(Long, RoaringBitmap)], i: Int,
                     maxColor: Int) = {
 
-    import scala.io.StdIn.readLine
-    println("On pause ici. Va voir la taille du truc dans Spark UI")
-    var temp = readLine()
+    //    import scala.io.StdIn.readLine
+    //    println("On pause ici. Va voir la taille du truc dans Spark UI")
+    //    var temp = readLine()
 
     val limit = adjMatrix.size //the number of iterations we do
     var j = 0 //start coloring using the first adjvector of the adjmatrix
@@ -99,6 +100,23 @@ object roaring_coloring extends Serializable {
 
 
   /**
+    * Used to filter out combos or clauses
+    *
+    * @param combos
+    * @param i
+    * @param step
+    * @return
+    */
+  def filterBig(combos: RDD[(Array[Char], Long)], i: Int, step: Int):
+  RDD[(Array[Char], Long)] = {
+    combos.flatMap(e => {
+      if (e._2 > i + step) None
+      else Some(e)
+    })
+  }
+
+
+  /**
     * Final version of the progressive coloring algorithm
     * We could add an initial coloring with OrderColoring for 100 000 vertices.
     *
@@ -143,7 +161,7 @@ object roaring_coloring extends Serializable {
 
     //TODO : Color 100 000 vertex first before doing the rest.
     //val combosNumbered = mycombos.zipWithIndex().cache()
-    val combosNumbered = assign_numberClauses(mycombos, sc).cache()
+    val combosNumbered: RDD[(Array[Char], Long)] = assign_numberClauses(mycombos, sc).cache()
 
     //We no longer need combos
     combos.unpersist(false)
@@ -204,9 +222,11 @@ object roaring_coloring extends Serializable {
       }
 
       //Generate the adjlists for every combo in that list
-      val r1 = genadjlist_roaring(i, step, combosNumbered, someCombos, sc).cache()
 
-
+      // val r1 = genadjlist_roaring(i, step, combosNumbered, someCombos, sc).cache()
+      val filteredCombos = filterBig(combosNumbered, i, step)
+      //filteredCombos.localCheckpoint()
+      val r1 = genadjlist_roaring(i, step, filteredCombos, someCombos, sc).cache()
 
       //Print the types of the roaring bitmaps
       if (debug == true) {
@@ -250,7 +270,9 @@ object roaring_coloring extends Serializable {
     }
 
     val percent = ((totalIterations.toDouble / count.toDouble) * 100)
+    val vertexPerIteration = count / totalIterations
     println(s"We did a total of $totalIterations iterations, which is $percent% of total")
+    println(s"We also colored $vertexPerIteration vertices per iteration on average")
 
     //Create tests now
     val bcastcolors = sc.broadcast(colors)
@@ -274,14 +296,14 @@ object roaring_coloring extends Serializable {
 
     //First step is to group every combo with every other combo to do a MapReduce.
     val bcastdata = sc.broadcast(combosToColor)
+    val chunkSize = combosToColor.size
 
     //For every partition, we build a hash table of COMBO -> List of neighbors (all neighbors are strictly less than combo)
     val r1 = combos.mapPartitions(partition => {
-      val hashtable = scala.collection.mutable.Map.empty[Long, RoaringBitmap]
+      val hashtable = scala.collection.mutable.HashMap.empty[Long, RoaringBitmap]
 
       partition.foreach(elem => {
         val thisId = elem._2
-        val someCombos = bcastdata.value
 
         // Si le ID du combo est plus haut que ceux des combos choisis, on fait aucun travail.
         //println(s" haut if $thisId > $i + $step ")
@@ -289,6 +311,9 @@ object roaring_coloring extends Serializable {
           val bbb = 2 //dummy statement for Scala
         }
         else {
+
+          val someCombos = bcastdata.value
+
           var j = if (thisId >= i)
             (thisId - i).toInt //start the counter at 0
           else 0
@@ -320,16 +345,18 @@ object roaring_coloring extends Serializable {
         }
       })
 
-      Iterator(hashtable.toArray)
+      //New ArrayBufer with results
+      // val rr = new ArrayBuffer[(Long, RoaringBitmap)]()
+      var rr2 = hashtable.toIterator
+      rr2
+      //Iterator(hashtable.toArray)
       //Return an iterator here
     })
 
-    //Fuse the sets
-    val r2 = r1.flatMap(e => e) //.cache
 
     // Debug mode. We print the adjacency lists
     if (debug == true) {
-      val d1 = r2.mapPartitionsWithIndex((partition, it) => {
+      val d1 = r1.mapPartitionsWithIndex((partition, it) => {
 
         var output = ""
         output += "Partition " + partition + "\n"
@@ -345,7 +372,7 @@ object roaring_coloring extends Serializable {
       }).collect().foreach(println)
     }
 
-    val r3 = r2.reduceByKey((a, b) => {
+    val r3 = r1.reduceByKey((a, b) => {
       //fuseadjlists(a, b)
       a.or(b)
       a
@@ -355,6 +382,9 @@ object roaring_coloring extends Serializable {
       e.runOptimize()
       e
     })
+
+    //Destroy the DAG here
+    // r4.localCheckpoint()
 
     if (debug == true) {
       println("Fused adjlists")

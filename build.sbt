@@ -15,6 +15,9 @@ libraryDependencies ++= Seq(
 // https://mvnrepository.com/artifact/org.roaringbitmap/RoaringBitmap
 libraryDependencies += "org.roaringbitmap" % "RoaringBitmap" % "0.9.0"
 
+//Ajout du parser d'expressions booleenes
+//libraryDependencies += "com.hypertino" %% "expression-parser" % "0.3.0"
+//libraryDependencies += "com.lihaoyi" %% "fastparse" % "2.2.2"
 
 mainClass in assembly := Some("cmdlineparser.TSPARK")
 

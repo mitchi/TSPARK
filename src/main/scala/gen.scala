@@ -999,21 +999,20 @@ object test5 extends App {
   import ipog.d_ipog.distributed_ipog_coloring
 
   val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
-    .set("spark.checkpoint.compress", "true")
+  //.set("spark.checkpoint.compress", "true")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 100
+  var n = 500
   var t = 2
   var v = 2
 
-  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 100000, "OC") //4000 pour 100 2 2
+  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 100000, "KP") //4000 pour 100 2 2
 
   //val tests = distributed_graphcoloring(n,t,v,sc, 4000, "OC")
 
   //val tests = distributed_ipog_coloring_roaring(n,t,v,sc, 0, -1, None, 20000, "OC")
   //val tests = distributed_ipog_coloring(n, t, v, sc, 6, -1)
-
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
@@ -1024,3 +1023,23 @@ object test5 extends App {
 
 
 }
+
+//Test the first character of each clause. If the first character is a value for at least one clause, then we
+//can use this comparator function.
+//Else, if the two functions are in t-way form, we use the other function.
+
+//Global form:
+//param1, param2, param3
+
+//Phi-way form is operator value vs operator value
+// <5 and <3 is compatible.
+// 5 < 3 is false, but 3<5 is true. We keep the true.
+//We use both in that case
+
+// 5!=3 is true, and 3!=5 is true as well.
+
+object test6 extends App {
+
+
+}
+
