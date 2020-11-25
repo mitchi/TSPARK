@@ -403,4 +403,4 @@ object roaring_coloring extends Serializable {
     r4
   }
 
-}
+} //object roaring coloring

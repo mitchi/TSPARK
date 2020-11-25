@@ -1,5 +1,7 @@
 package phiway
 
+import org.roaringbitmap.RoaringBitmap
+
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 
@@ -13,6 +15,166 @@ import scala.io.Source
 
 object phiway extends Serializable {
 
+
+  sealed abstract class EnsembleOuValeur
+
+  case class Ensemble(var ensemble: RoaringBitmap) extends EnsembleOuValeur
+
+  case class Valeur(valeur: Short) extends EnsembleOuValeur
+
+  case class Rien() extends EnsembleOuValeur
+
+  //Clause class
+  case class clauseEOV(var eovs: Array[EnsembleOuValeur]) {
+    //Pour utiliser () pour adresser les conds directement
+    def apply(i: Int) = eovs(i)
+  }
+
+
+  /**
+    * We take a reduced EOV clause, and produce a test with it
+    */
+  def EOVtoTest(a: clauseEOV): String = {
+    var test = ""
+    //On separe le test avec des ;
+    //Go through all the reduced conditions
+    for (i <- a.eovs) {
+
+      i match {
+        //Si on a un ensemble, on choisit une valeur dans l'ensemble.
+        //Ici, je prends toujours la première valeur.
+        case Ensemble(ensemble) => {
+          val c = ensemble.first()
+          test += s"$c;"
+        }
+        case Valeur(valeur) => test += s"$valeur;"
+        case Rien() => test += ";"
+      }
+    }
+    test
+  }
+
+
+  /**
+    * Transform a clause to the new clause type
+    *
+    * @param a
+    * @param v
+    * @return
+    */
+  def transformClause(a: clause, v: Int): clauseEOV = {
+    var accumulator = new ArrayBuffer[EnsembleOuValeur]()
+    val result: Array[EnsembleOuValeur] = a.conds.map(cond => condToEOV(cond, v))
+    clauseEOV(result)
+  }
+
+
+  /**
+    * Merge every condition inside the clauses. Return the final clause
+    *
+    * @param a
+    * @param b
+    */
+  def mergetwoclauses(a: clauseEOV, b: clauseEOV): clauseEOV = {
+
+    val len = a.eovs.size
+    val buffer = new ArrayBuffer[EnsembleOuValeur]()
+
+    for (i <- 0 until len) {
+      val c = mergetwo(a(i), b(i)) //merge two conditions on the same parameter
+      buffer += c
+    }
+    clauseEOV(buffer.toArray)
+  }
+
+
+  /**
+    * Merge two conditions.
+    *
+    * @param a
+    * @param b
+    * @return
+    */
+  def mergetwo(a: EnsembleOuValeur, b: EnsembleOuValeur): EnsembleOuValeur = {
+
+    (a, b) match {
+      case (a: Valeur, b: Ensemble) => {
+        return a
+      }
+      case (a: Valeur, b: Rien) => {
+        return a
+      }
+
+      case (a: Valeur, b: Valeur) => return a //peu importe, a ou b
+
+      case (a: Rien, b: Valeur) => {
+        return b
+      }
+      case (a: Rien, b: Ensemble) => {
+        return b
+      }
+
+      case (a: Rien, b: Rien) => return a
+
+      case (a: Ensemble, b: Rien) => {
+        return a
+      }
+
+      case (a: Ensemble, b: Valeur) => {
+        return b
+      }
+
+      case (a: Ensemble, b: Ensemble) => {
+        a.ensemble.and(b.ensemble) //resultat dans a
+        return a
+      }
+    }
+
+  }
+
+  /**
+    * From a cond to an EnsembleOuValeur
+    *
+    * @param a
+    * @return
+    */
+  def condToEOV(a: booleanCond, v: Int): EnsembleOuValeur = {
+
+    if (a.operator == 'X') {
+      return Rien()
+    }
+
+    if (a.operator == '=') {
+      return Valeur(a.value)
+    }
+
+    var bitmap = new RoaringBitmap()
+    //Utiliser les itérateurs?
+
+    //Grab the domain size of the parameter.
+    //Here, we just grab "v"
+
+    if (a.operator == '!') {
+      for (i <- 0 until v) {
+        if (i != a.value) bitmap.add(i)
+      }
+    }
+
+    else if (a.operator == '<') {
+      for (i <- 0 until a.value)
+        bitmap.add(i)
+    }
+
+    //Else '>'
+    else {
+      for (i <- a.value until v)
+        bitmap.add(i)
+    }
+
+    Ensemble(bitmap)
+  }
+
+
   //Size : 32 bits (previously, 16 bits)
   case class booleanCond() {
     var operator: Char = 'X' //X signifie qu'il n'y a rien. Le parametre est absent
@@ -24,6 +186,10 @@ object phiway extends Serializable {
   }
 
   case class clause(conds: Array[booleanCond]) {
+
+    //Pour utiliser () pour adresser les conds directement
+    def apply(i: Int) = conds(i)
+
     override def toString: String = {
       var output = ""
       for (i <- conds) output += i.toString + " "
@@ -121,6 +287,7 @@ object phiway extends Serializable {
     combo2
   }
 
+  
   /**
     * Compare two boolean formulas and return whether or not they are adjacent in a graph
     * construction
