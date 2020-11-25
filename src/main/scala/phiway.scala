@@ -138,18 +138,20 @@ object phiway extends Serializable {
     * @param a
     * @return
     */
-  def condToEOV(a: booleanCond, v: Int): EnsembleOuValeur = {
+  def condToEOV(aa: booleanCondition, v: Int): EnsembleOuValeur = {
 
-    if (a.operator == 'X') {
+
+    if (aa.isInstanceOf[EmptyParam]) {
       return Rien()
     }
+
+    val a = aa.asInstanceOf[booleanCond]
 
     if (a.operator == '=') {
       return Valeur(a.value)
     }
 
     var bitmap = new RoaringBitmap()
-    //Utiliser les itérateurs?
 
     //Grab the domain size of the parameter.
     //Here, we just grab "v"
@@ -174,18 +176,23 @@ object phiway extends Serializable {
     Ensemble(bitmap)
   }
 
+  sealed abstract class booleanCondition
+
+  case class EmptyParam() extends booleanCondition {
+    override def toString: String = return s"XX"
+  }
 
   //Size : 32 bits (previously, 16 bits)
-  case class booleanCond() {
-    var operator: Char = 'X' //X signifie qu'il n'y a rien. Le parametre est absent
-    var value: Short = 0 //16 bit domain size
+  case class booleanCond(var operator: Char = 'X', var value: Short = 0) extends booleanCondition {
+    //X signifie qu'il n'y a rien. Le parametre est absent
+    //16 bit domain size
 
     override def toString: String = {
       return s"${operator}$value"
     }
   }
 
-  case class clause(conds: Array[booleanCond]) {
+  case class clause(conds: Array[booleanCondition]) {
 
     //Pour utiliser () pour adresser les conds directement
     def apply(i: Int) = conds(i)
@@ -203,15 +210,15 @@ object phiway extends Serializable {
     *
     * @param clause
     */
-  def parseClause(clause: String): booleanCond = {
+  def parseClause(clause: String): booleanCondition = {
 
 
     //First we check if there is an operator like < > !. The operator = is default
     val cond = new booleanCond()
 
     //Empty-clause, means that there is no parameter in the clause. We use default values
-    if (clause == "") {
-      return cond
+    if (clause == "X") {
+      return EmptyParam()
     }
 
     val c = clause(0)
@@ -244,7 +251,7 @@ object phiway extends Serializable {
 
     //Comment inferer le return??
     def treatLine(line: String): Unit = {
-      var conds = new ArrayBuffer[booleanCond]()
+      var conds = new ArrayBuffer[booleanCondition]()
 
       //Ligne commentaire
       if (line(0) == '#') {
@@ -287,7 +294,111 @@ object phiway extends Serializable {
     combo2
   }
 
-  
+
+  /**
+    * Return the result of the intersection between two boolean conditions
+    *
+    * @param a
+    * @param b
+    */
+  def intersection(c1: booleanCondition, c2: booleanCondition): Boolean = {
+    //If one of the two conditions is the EmptyParam we return false
+    if (c1.isInstanceOf[EmptyParam] || c2.isInstanceOf[EmptyParam]) return false
+
+    val a = c1.asInstanceOf[booleanCond]
+    val b = c2.asInstanceOf[booleanCond]
+
+
+    //a<9 et a>9 -> 8>9    a<9 et a>5 ->  8>5
+    //Plus grande valeur de l'ensemble < vs la condition
+    if (a.operator == '<' && b.operator == '>') {
+      if (a.value - 1 > b.value) return true
+      else return false
+    }
+
+    if (a.operator == '<' && b.operator == '<') {
+      return true
+    }
+
+    //Même chose de l'autre coté
+    if (a.operator == '<' && b.operator == '=')
+      return b.value < a.value
+
+    //a < 1 et a !=0
+    if (a.operator == '<' && b.operator == '!') {
+      if (b.value == 0 && a.value == 1) return false //seul cas sans intersection je pense
+      else return true
+    }
+
+    //a>9 et a<9 -> 8>9 faux
+    //Plus grande valeur de l'ensemble < vs la condition
+    if (a.operator == '>' && b.operator == '<') {
+      if (b.value - 1 > a.value) return true
+      else return false
+    }
+
+    if (a.operator == '>' && b.operator == '>') return true //2
+
+    //a > 32766 && b != 32766
+    if (a.operator == '>' && b.operator == '!') {
+      if (b.value == 32767 && a.value == 32766) return false
+      else return true
+    }
+
+    //a > 5 et b = 3
+    if (a.operator == '>' && b.operator == '=') {
+      return b.value > a.value
+    }
+
+    //4x!
+    if (a.operator == '!' && b.operator == '<') {
+      if (a.value == 0 && b.value == 1) return false //seul cas sans intersection je pense
+      else return true
+    }
+
+    //a > 32766 && b != 32766
+    if (a.operator == '!' && b.operator == '>') {
+      if (a.value == 32767 && b.value == 32766) return false
+      else return true
+    }
+
+    //!5  et !3 et !3 et !3
+    if (a.operator == '!' && b.operator == '!') return true //4
+
+
+    // !3 et =2. Il faut que les opérandes soit pareil. Exemple a != 3 et a = 3 -> compatible
+    if (a.operator == '!' && b.operator == "=") { //5
+      if (a.value == b.value) return false
+      else return true
+    }
+
+    //On fait les 4 =
+    // = avec <
+    if (a.operator == '=' && b.operator == '<') //7
+      return a.value < b.value
+
+    //a =5  b>3
+    if (a.operator == '=' && b.operator == '>') {
+      return a.value > b.value
+    }
+
+    if (a.operator == '=' && b.operator == "!") { //6
+      if (a.value == b.value) return false
+      else return true
+    }
+
+    //Premier cas: On a deux t-way combos essentiellement.
+    //Il faut que la valeur soit différente
+    if (a.operator == '=' && b.operator == '=') {
+      if (a.value != b.value) return false
+      else return true
+    }
+
+    println("Erreur fonction intersection")
+    return false
+
+  }
+
   /**
     * Compare two boolean formulas and return whether or not they are adjacent in a graph
     * construction
@@ -297,7 +408,7 @@ object phiway extends Serializable {
     * @param a
     * @param b
     */
-  def intersection(a: booleanCond, b: booleanCond): Unit = {
+  def intersection2(a: booleanCond, b: booleanCond): Unit = {
 
     //Optimiser le nombre de comparaisons en regroupant les trucs.
     //Et en mettant la comparaison la plus fréquente en premier.
@@ -386,6 +497,7 @@ object phiway extends Serializable {
 
   }
 
+  //https://docs.scala-lang.org/overviews/scala-book/match-expressions.html
   def main(args: Array[String]): Unit = {
     val clauses = readPhiWayClauses("clauses.txt")
     clauses.foreach(println)

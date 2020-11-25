@@ -67,7 +67,8 @@ object phiway_coloring extends Serializable {
       if (i == len) return
 
       val answer = intersection(a(i), b(i))
-      if (answer == true) return true
+      if (answer == true)
+        return true
       i += 1
       loop
     }
