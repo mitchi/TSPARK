@@ -296,14 +296,21 @@ object phiway extends Serializable {
 
 
   /**
-    * Return the result of the intersection between two boolean conditions
+    * This function answers the question: Are these two boolean conditions compatible, meaning that they can cohabit
+    * inside the same test.
+    *
+    * =5 and =5 is compatible
+    * =4 and =5 is not compatible
+    *
+    * <3 and <5 is compatible
+    * etc
     *
     * @param a
     * @param b
     */
-  def intersection(c1: booleanCondition, c2: booleanCondition): Boolean = {
+  def compatible(c1: booleanCondition, c2: booleanCondition): Boolean = {
     //If one of the two conditions is the EmptyParam we return false
-    if (c1.isInstanceOf[EmptyParam] || c2.isInstanceOf[EmptyParam]) return false
+    if (c1.isInstanceOf[EmptyParam] || c2.isInstanceOf[EmptyParam]) return true
 
     val a = c1.asInstanceOf[booleanCond]
     val b = c2.asInstanceOf[booleanCond]
@@ -387,11 +394,9 @@ object phiway extends Serializable {
       else return true
     }
 
-    //Premier cas: On a deux t-way combos essentiellement.
-    //Il faut que la valeur soit différente
     if (a.operator == '=' && b.operator == '=') {
-      if (a.value != b.value) return false
-      else return true
+      if (a.value == b.value) return true
+      else return false
     }
 
     println("Erreur fonction intersection")
