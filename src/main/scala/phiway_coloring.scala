@@ -15,7 +15,7 @@ import scala.util.Random
 
 object phiway_coloring extends Serializable {
 
-  var debug = true
+  var debug = false
   var save = false
   var filename = "results.txt"
 
@@ -108,7 +108,8 @@ object phiway_coloring extends Serializable {
           for (i <- someClauses) {
             val chunkClauseID = i._2
             //If this clause ID is bigger or equal, we dont generate the adjacency data.
-            if (thisClauseID >= chunkClauseID) return
+            if (thisClauseID >= chunkClauseID)
+              return
 
             val clauseA = elem._1
             val clauseB = i._1
@@ -502,8 +503,8 @@ object phiway_coloring extends Serializable {
       // val r1 = genadjlist_roaring(i, step, combosNumbered, someCombos, sc).cache()
       val filteredCombos = filterBig(clausesNumbered, i, step)
       //filteredCombos.localCheckpoint()
-      //val r1 = genadjlist2(filteredCombos, someClauses, sc).cache()
-      val r1 = genadjlist(i, step, filteredCombos, someClauses, sc).cache()
+      val r1 = genadjlist2(filteredCombos, someClauses, sc).cache()
+      //val r1 = genadjlist(i, step, filteredCombos, someClauses, sc).cache()
 
       //Print the types of the roaring bitmaps
       if (debug == true) {
@@ -642,7 +643,7 @@ object phiway_coloring extends Serializable {
     val sc = new SparkContext(conf)
     sc.setLogLevel("OFF")
 
-    val tests = start_graphcoloring_phiway(3, 2, "clauses1.txt", sc)
+    val tests = start_graphcoloring_phiway(3, 2, "clauses1.txt", sc, 6)
     tests.foreach(println)
   }
 

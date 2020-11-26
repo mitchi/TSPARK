@@ -12,9 +12,10 @@ import scala.io.Source
   *
   */
 
-
 object phiway extends Serializable {
 
+  //This array is initialized by the parseClause function
+  var domainSizes = Array[Short]()
 
   sealed abstract class EnsembleOuValeur
 
@@ -239,6 +240,17 @@ object phiway extends Serializable {
     cond
   }
 
+  /**
+    * The first line contains the domain sizes
+    * The line has the following structure: d1-d2-d3-d4-d4.
+    * With d1,d2 being domain sizes for parameters p1,p2 etc
+    *
+    * @param firstLine
+    */
+  def readDomainSizes(firstLine: String) = {
+    val domainSizes = firstLine.split("-").map(_.toShort)
+    domainSizes
+  }
 
   /**
     * In Phiway testing, the notion of testing strength is replaced with a set of boolean conditions
@@ -268,9 +280,18 @@ object phiway extends Serializable {
       clauses += clause(conds.toArray)
     }
 
+    var firstLine = true
     //For all the lines in the file
     for (line <- Source.fromFile(filename).getLines()) {
-      val e = treatLine(line)
+
+      if (firstLine == true) {
+        //Is this a line with the domain sizes?
+        if (line.contains("-")) {
+          firstLine = false
+          domainSizes = readDomainSizes(line)
+        }
+      }
+      else treatLine(line)
     }
 
     clauses.toArray
