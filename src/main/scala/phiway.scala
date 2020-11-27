@@ -46,6 +46,12 @@ object phiway extends Serializable {
         //Si on a un ensemble, on choisit une valeur dans l'ensemble.
         //Ici, je prends toujours la première valeur.
         case Ensemble(ensemble) => {
+
+          if (ensemble.isEmpty) {
+            println("ERROR: Impossible boolean condition produces an empty set")
+            System.exit(1)
+          }
+
           val c = ensemble.first()
           test += s"$c;"
         }
@@ -141,6 +147,52 @@ object phiway extends Serializable {
       }
     }
 
+  }
+
+  /**
+    * Always tranform the boolean condition to a set.
+    * We use this with hypergraph vertex covering
+    *
+    * @param aa
+    * @param ith
+    * @return
+    */
+  def condToSET(aa: booleanCondition, ith: Int): RoaringBitmap = {
+    var bitmap = new RoaringBitmap()
+
+    //Si on a Rien, alors on retourne la totalité de l'ensemble
+    if (aa.isInstanceOf[EmptyParam]) {
+      for (i <- 0 until domainSizes(ith)) {
+        bitmap.add(i)
+      }
+      return bitmap
+    }
+    //Sinon, on y va avec les opérateurs
+
+    val a = aa.asInstanceOf[booleanCond]
+
+    if (a.operator == '=') {
+      bitmap.add(a.value)
+    }
+
+    else if (a.operator == '!') {
+      for (i <- 0 until domainSizes(ith)) {
+        if (i != a.value) bitmap.add(i)
+      }
+    }
+
+    else if (a.operator == '<') {
+      for (i <- 0 until a.value)
+        bitmap.add(i)
+    }
+
+    //Else '>'
+    else {
+      for (i <- a.value + 1 until domainSizes(ith))
+        bitmap.add(i)
+    }
+
+    bitmap
   }
 
   /**

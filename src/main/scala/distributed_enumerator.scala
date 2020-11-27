@@ -265,7 +265,9 @@ object distributed_enumerator extends Serializable {
   }
 
   /** Copy a completed combination sequence to the parameter vector */
-  def copycombinations(combinations: Array[Char], indexes: ArrayBuffer[Int], pv: Array[Char]): Unit = {
+  def copycombinations(combinations: Array[Char],
+                       indexes: ArrayBuffer[Int],
+                       pv: Array[Char]): Unit = {
 
     var i = 0
 
