@@ -1,0 +1,8 @@
+#Mettre le domain size en première ligne
+#a-b-c
+9-2-2
+
+<5;0;X
+!2;X;1
+!3;0;1
+!0;0;1

@@ -58,17 +58,21 @@ object phiway extends Serializable {
 
   /**
     * Transform a clause to the new clause type
+    * We use the global domainSize variable.
     *
     * @param a
-    * @param v
     * @return
     */
-  def transformClause(a: clause, v: Int): clauseEOV = {
+  def transformClause(a: clause): clauseEOV = {
     var accumulator = new ArrayBuffer[EnsembleOuValeur]()
-    val result: Array[EnsembleOuValeur] = a.conds.map(cond => condToEOV(cond, v))
+
+    var i = -1
+    val result: Array[EnsembleOuValeur] = a.conds.map(cond => {
+      i += 1
+      condToEOV(cond, i)
+    })
     clauseEOV(result)
   }
-
 
   /**
     * Merge every condition inside the clauses. Return the final clause
@@ -135,11 +139,13 @@ object phiway extends Serializable {
 
   /**
     * From a cond to an EnsembleOuValeur
+    * We use the global domainSize variable
     *
-    * @param a
+    * @param a the boolean condition
+    * @param i the ith parameter
     * @return
     */
-  def condToEOV(aa: booleanCondition, v: Int): EnsembleOuValeur = {
+  def condToEOV(aa: booleanCondition, i: Int): EnsembleOuValeur = {
 
 
     if (aa.isInstanceOf[EmptyParam]) {
@@ -158,7 +164,7 @@ object phiway extends Serializable {
     //Here, we just grab "v"
 
     if (a.operator == '!') {
-      for (i <- 0 until v) {
+      for (i <- 0 until domainSizes(i)) {
         if (i != a.value) bitmap.add(i)
       }
     }
@@ -170,7 +176,7 @@ object phiway extends Serializable {
 
     //Else '>'
     else {
-      for (i <- a.value until v)
+      for (i <- a.value until domainSizes(i))
         bitmap.add(i)
     }
 
@@ -265,8 +271,8 @@ object phiway extends Serializable {
     def treatLine(line: String): Unit = {
       var conds = new ArrayBuffer[booleanCondition]()
 
-      //Ligne commentaire
-      if (line(0) == '#') {
+      //Ligne commentaire ou ligne vide
+      if (line == "" || line(0) == '#') {
         return
       }
 
@@ -286,7 +292,7 @@ object phiway extends Serializable {
 
       if (firstLine == true) {
         //Is this a line with the domain sizes?
-        if (line.contains("-")) {
+        if (line.contains("-") && !line.contains("#")) {
           firstLine = false
           domainSizes = readDomainSizes(line)
         }
@@ -395,7 +401,7 @@ object phiway extends Serializable {
 
 
     // !3 et =2. Il faut que les opérandes soit pareil. Exemple a != 3 et a = 3 -> compatible
-    if (a.operator == '!' && b.operator == "=") { //5
+    if (a.operator == '!' && b.operator == '=') { //5
       if (a.value == b.value) return false
       else return true
     }
@@ -410,7 +416,7 @@ object phiway extends Serializable {
       return a.value > b.value
     }
 
-    if (a.operator == '=' && b.operator == "!") { //6
+    if (a.operator == '=' && b.operator == '!') { //6
       if (a.value == b.value) return false
       else return true
     }

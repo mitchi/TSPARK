@@ -1,15 +1,10 @@
-import enumerator.distributed_enumerator.fastGenCombos
-import ordercoloring.OrderColoring.{coloringToTests, isAdjacent, mergeTests}
+package phiwaycoloring
+
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 import roaringcoloring.roaring_coloring.{debug, _}
-import utils.utils.saveTestSuite
-import utils.utils
 import phiway.phiway._
-import progressivecoloring.progressive_coloring.assign_numberClauses
-
-import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
 
@@ -20,11 +15,17 @@ object phiway_coloring extends Serializable {
   var filename = "results.txt"
 
 
-  def coloringToTests(vertices: RDD[(Int, clause)], v: Int): Array[String] = {
+  /**
+    * Au lieu d'utiliser un paramètre v, on utilise la variable globale domainsizes
+    *
+    * @param vertices
+    * @return
+    */
+  def coloringToTests(vertices: RDD[(Int, clause)]): Array[String] = {
 
     //Transform clauses to a form proper for merging
     var vv = vertices.mapValues(clause => {
-      transformClause(clause, v)
+      transformClause(clause)
     })
 
     //We merge the clauses using the cluster
@@ -36,16 +37,6 @@ object phiway_coloring extends Serializable {
     val rr = res.map(e => EOVtoTest(e._2)).collect()
 
     rr
-    //    val res = vv.reduceByKey((a, b) => {
-    //      val r = mergeTests(a, b)
-    //      if (r.isEmpty) {
-    //        println("Error here. Debug this")
-    //      }
-    //      r.get
-    //    })
-
-    //Return the thing
-    //res.map(r => r._2).collect()
   }
 
 
@@ -187,7 +178,7 @@ object phiway_coloring extends Serializable {
     *
     */
 
-  def genadjlist(i: Long, step: Long, clauses: RDD[(clause, Long)],
+  def genadjlist(i: Long, chunkSize: Long, clauses: RDD[(clause, Long)],
                  clausesToColor: Array[(clause, Long)], sc: SparkContext) = {
 
     //First step is to group every combo with every other combo to do a MapReduce.
@@ -202,7 +193,7 @@ object phiway_coloring extends Serializable {
         val thisId = elem._2
 
         // Si le ID du combo est plus haut que ceux des combos choisis, on fait aucun travail.
-        if (thisId > i + step) {
+        if (thisId > i + chunkSize) {
           val bbb = 2 //dummy statement for Scala
         }
         else {
@@ -405,10 +396,14 @@ object phiway_coloring extends Serializable {
     *
     * @param combos the RDD of combos
     * @param sc     SparkContext
-    * @param step   the number of vertices to move at the same time. Memory should increase with each iteration
+    * @param chunkSize the number of vertices to move at the same time.
+    * @param algorithm OrderColoring or Knights and Peasants
     * @return
     */
-  def phiway_coloring(clauses: RDD[clause], sc: SparkContext, step: Int, algorithm: String = "OrderColoring", v: Int) = {
+  def phiway_coloring(clauses: RDD[clause],
+                      sc: SparkContext,
+                      chunkSize: Int,
+                      algorithm: String = "OrderColoring") = {
     //First, color 100 000 elements. If the graph is colored, we return. Else we continue here.
     val count = clauses.count()
     val colors = new Array[Int](count.toInt) //colors for every vertex, starting at 0. We pass this data structure around and modify it
@@ -481,11 +476,11 @@ object phiway_coloring extends Serializable {
 
       if (i >= count) return //if we have colored everything, we are good to go
 
-      println(s"Currently working with a chunk of the graph with $step vertices.")
+      println(s"Currently working with a chunk of the graph with $chunkSize vertices.")
 
       //Filter the combos we color in the next OrderColoring iteration
       val someClauses = clausesNumbered.flatMap(elem => {
-        if (elem._2 < i + step && elem._2 >= i) {
+        if (elem._2 < i + chunkSize && elem._2 >= i) {
           Some(elem)
         }
         else None
@@ -501,10 +496,10 @@ object phiway_coloring extends Serializable {
 
       //Generate the adjlists for every combo in that list
       // val r1 = genadjlist_roaring(i, step, combosNumbered, someCombos, sc).cache()
-      val filteredCombos = filterBig(clausesNumbered, i, step)
+      val filteredCombos = filterBig(clausesNumbered, i, chunkSize)
       //filteredCombos.localCheckpoint()
-      val r1 = genadjlist2(filteredCombos, someClauses, sc).cache()
-      //val r1 = genadjlist(i, step, filteredCombos, someClauses, sc).cache()
+      //val r1 = genadjlist2(filteredCombos, someClauses, sc).cache()
+      val r1 = genadjlist(i, chunkSize, filteredCombos, someClauses, sc).cache()
 
       //Print the types of the roaring bitmaps
       if (debug == true) {
@@ -542,7 +537,7 @@ object phiway_coloring extends Serializable {
       totalIterations += r2._1
       maxColor = r2._2
       r1.unpersist(true)
-      i += step
+      i += chunkSize
 
       loop
     }
@@ -561,7 +556,7 @@ object phiway_coloring extends Serializable {
     })
 
     //Transform into tests
-    coloringToTests(properFormRDD,v)
+    coloringToTests(properFormRDD)
   }
 
 
@@ -595,38 +590,38 @@ object phiway_coloring extends Serializable {
     * @param sc
     * @return
     */
-  def start_graphcoloring_phiway(n: Int, v: Int, clausesFile: String, sc: SparkContext,
+  def start_graphcoloring_phiway(clausesFile: String, sc: SparkContext,
                                  chunkSize: Int = 4000, algorithm: String = "OrderColoring"):
   Array[String] = {
 
-    //Read the clauses
+    //Read the clauses and the domain sizes
     val clauses = readPhiWayClauses(clausesFile)
     val number = clauses.size
 
     println("Distributed Graph Coloring with Roaring bitmaps")
     println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Using a set of phiway clauses instead of interaction strength")
-    println(s"Problem : n=$n,v=$v and $number clauses")
+    println(s"Problem : and $number clauses")
 
     import java.io._
     val pw = new PrintWriter(new FileOutputStream(filename, true))
 
     var t1 = System.nanoTime()
 
-    val tests = phiway_coloring(sc.makeRDD(clauses), sc, chunkSize, algorithm, v)
+    val tests = phiway_coloring(sc.makeRDD(clauses), sc, chunkSize, algorithm)
 
     var t2 = System.nanoTime()
     var time_elapsed = (t2 - t1).toDouble / 1000000000
 
-    pw.append(s"$number;$n;$v;GRAPHCOLORING_PHIWAY;$time_elapsed;${tests.size}\n")
-    println(s"$number;$n;$v;GRAPHCOLORING_PHIWAY;$time_elapsed;${tests.size}\n")
+    pw.append(s"$clausesFile;GRAPHCOLORING_PHIWAY;$time_elapsed;${tests.size}\n")
+    println(s"$clausesFile;GRAPHCOLORING_PHIWAY;$time_elapsed;${tests.size}\n")
     pw.flush()
 
     //If the option to save to a text file is activated
     if (save == true) {
-      println(s"Saving the test suite to a file named $number;$n;$v.txt")
+      println(s"Saving the test suite to a file named $number.txt")
       //Save the test suite to file
-      saveTestSuite(s"$number;$n;$v.txt", tests)
+      saveTestSuite(s"$number.txt", tests)
     }
 
     //Return the test suite
@@ -639,11 +634,10 @@ object phiway_coloring extends Serializable {
     val conf = new SparkConf().setMaster("local[1]")
       .setAppName("Phi-way graph coloring")
       .set("spark.driver.maxResultSize", "0")
-    //.set("spark.checkpoint.compress", "true")
     val sc = new SparkContext(conf)
     sc.setLogLevel("OFF")
 
-    val tests = start_graphcoloring_phiway(3, 2, "clauses1.txt", sc, 6)
+    val tests = start_graphcoloring_phiway("clauses2.txt", sc, 6)
     tests.foreach(println)
   }
 

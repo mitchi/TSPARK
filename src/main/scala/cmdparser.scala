@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.file.Paths
 
 import cmdline.MainConsole.args2maps
+import cmdlineparser.TSPARK.CommonOpt
 import org.apache.spark.{SparkConf, SparkContext}
 import org.backuity.clist._
 import enumerator.distributed_enumerator._
@@ -22,6 +23,20 @@ object TSPARK {
   }
 
   //https://docs.scala-lang.org/tour/self-types.html
+
+
+  object Phiwayparser extends Command(name = "phiway", description = "Phi-way testing from a list of clauses") with CommonOpt {
+
+    var filename = arg[String](name = "clauses", description = "filename for the list of clauses")
+
+    var algo = opt[String](name = "algorithm", description = "algorithm to use: OC for Order Coloring, " +
+      "KP for Knights and Peasants, " +
+      "HC for hypergraph covering", default = "OC")
+
+    var help = opt[Boolean](name = "help", description = "Display help for phiway")
+    var chunkSize = opt[Int](name = "chunksize", description = "Chunk of vertices to use for graph coloring. Default is 4000", default = 4000)
+    var saveFile = opt[String](name = "outputfile", description = "Output the tests to a file instead of Standard output", default = "tests.txt")
+  }
 
   //Nouvel objet pour Distributed IPOG avec Roaring
   object D_ipog_coloring_roaring extends Command(name = "dicr",
@@ -201,7 +216,7 @@ object TSPARK {
       .version("1.0.0")
       .withProgramName("TSPARK")
       .withDescription("a distributed testing tool")
-      .withCommands(Graphviz, edn, Color, ColoringRoaring, D_ipog_coloring_roaring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
+      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, D_ipog_coloring_roaring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
 
 
     //Create the Spark Context if it does not already exist
@@ -217,8 +232,31 @@ object TSPARK {
     import ipog.d_ipog._
     import utils.utils.print_combos_in_order
     import ipog.d_ipog_roaring.distributed_ipog_coloring_roaring
+    import phiwaycoloring.phiway_coloring._
 
     choice match {
+
+      case Some(Phiwayparser) => {
+
+        val file = Phiwayparser.filename
+        val chunkSize = Phiwayparser.chunkSize
+        val algorithm = Phiwayparser.algo
+
+        val tests = algorithm match {
+          case "HC" => println("Using the hypergraph covering algorithm")
+          case "KP" => {
+            println("Using the Knights and Peasants graph coloring algorithm")
+            start_graphcoloring_phiway(file, sc, chunkSize, "KP")
+          }
+          case "OC" => {
+            println("Using the Order Coloring graph coloring algorithm")
+            start_graphcoloring_phiway(file, sc, chunkSize, "OC")
+          }
+          case _ => println(s"Incorrect algorithm $algorithm")
+        }
+        //val tests = start_graphcoloring_phiway(file, sc, chunkSize, "OC")
+
+      }
 
       //Distributed IPOG Coloring roaring bitmaps
       case Some(D_ipog_coloring_roaring) => {
