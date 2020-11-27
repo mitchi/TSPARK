@@ -28,12 +28,8 @@ object TSPARK {
   object Phiwayparser extends Command(name = "phiway", description = "Phi-way testing from a list of clauses") with CommonOpt {
 
     var filename = arg[String](name = "clauses", description = "filename for the list of clauses")
-
-    var algo = opt[String](name = "algorithm", description = "algorithm to use: OC for Order Coloring, " +
-      "KP for Knights and Peasants, " +
-      "HC for hypergraph covering", default = "OC")
-
-    var help = opt[Boolean](name = "help", description = "Display help for phiway")
+    var algo = opt[String](name = "algorithm", description = "algorithm to use: OC,KP or HC", default = "OC")
+    //var help = opt[Boolean](name = "help", description = "Display help for phiway")
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk of vertices to use for graph coloring. Default is 4000", default = 4000)
     var saveFile = opt[String](name = "outputfile", description = "Output the tests to a file instead of Standard output", default = "tests.txt")
   }

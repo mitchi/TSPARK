@@ -39,6 +39,7 @@ object phiway extends Serializable {
     var test = ""
     //On separe le test avec des ;
     //Go through all the reduced conditions
+    // var index = 0
     for (i <- a.eovs) {
 
       i match {
@@ -49,10 +50,15 @@ object phiway extends Serializable {
           test += s"$c;"
         }
         case Valeur(valeur) => test += s"$valeur;"
-        case Rien() => test += ";"
+        case Rien() => {
+          //Take the first value of the domain size, which is always 0
+          test += "0;"
+        }
       }
+      //  index+=1
     }
-    test
+    //Remove last ;
+    test.substring(0, test.length - 1)
   }
 
 
@@ -86,7 +92,7 @@ object phiway extends Serializable {
     val buffer = new ArrayBuffer[EnsembleOuValeur]()
 
     for (i <- 0 until len) {
-      val c = mergetwo(a(i), b(i)) //merge two conditions on the same parameter
+      val c = intersect_two(a(i), b(i)) //merge two conditions on the same parameter
       buffer += c
     }
     clauseEOV(buffer.toArray)
@@ -100,7 +106,7 @@ object phiway extends Serializable {
     * @param b
     * @return
     */
-  def mergetwo(a: EnsembleOuValeur, b: EnsembleOuValeur): EnsembleOuValeur = {
+  def intersect_two(a: EnsembleOuValeur, b: EnsembleOuValeur): EnsembleOuValeur = {
 
     (a, b) match {
       case (a: Valeur, b: Ensemble) => {
@@ -141,11 +147,11 @@ object phiway extends Serializable {
     * From a cond to an EnsembleOuValeur
     * We use the global domainSize variable
     *
-    * @param a the boolean condition
-    * @param i the ith parameter
+    * @param a   the boolean condition
+    * @param ith the ith parameter
     * @return
     */
-  def condToEOV(aa: booleanCondition, i: Int): EnsembleOuValeur = {
+  def condToEOV(aa: booleanCondition, ith: Int): EnsembleOuValeur = {
 
 
     if (aa.isInstanceOf[EmptyParam]) {
@@ -164,7 +170,7 @@ object phiway extends Serializable {
     //Here, we just grab "v"
 
     if (a.operator == '!') {
-      for (i <- 0 until domainSizes(i)) {
+      for (i <- 0 until domainSizes(ith)) {
         if (i != a.value) bitmap.add(i)
       }
     }
@@ -176,7 +182,7 @@ object phiway extends Serializable {
 
     //Else '>'
     else {
-      for (i <- a.value until domainSizes(i))
+      for (i <- a.value + 1 until domainSizes(ith))
         bitmap.add(i)
     }
 
