@@ -1,36 +1,197 @@
-import java.util
-
-import central.gen.{filename, save}
-import enumerator.distributed_enumerator._
+import central.gen.filename
 import hypergraph_cover.Algorithm2.progressive_filter_combo_string
 import hypergraph_cover.greedypicker.greedyPicker
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
-import org.roaringbitmap.RoaringBitmap
-import utils.utils.{arrayToString, saveTestSuite, stringToArray}
-import utils.utils
+import utils.utils.{arrayToString, stringToArray}
 import phiway.phiway._
 
 import scala.collection.mutable.ArrayBuffer
 
 object phiway_hypergraph extends Serializable {
 
+  /**
+    * Manage the available domain for a parameter
+    *
+    * @param domain
+    * @param iterator
+    */
+  case class domainParam(domain: ArrayBuffer[Int], var iterator: Int = 0) {
 
-  case class it(bitmap: RoaringBitmap) {
-    var iteratorr = bitmap.iterator()
+    def printDomain: String = {
+      var output = ""
+      for (i <- domain) {
+        output += i
+      }
+      output
+    }
+
+    //Return the current value
+    override def toString: String = {
+      return domain(iterator).toString
+    }
+
+
+    /**
+      * Reset the domain size
+      */
+    def reset(): Unit = {
+      iterator = 0
+    }
+
+    /**
+      * Increment the domain of the parameter using the iterator.
+      * Always use this function before the increment function
+      */
+    def tryIncrement(): Int = {
+      //Case 1: If we increment, we go over the domain size
+      if (iterator + 1 == domain.length) {
+        return 1
+      }
+
+      //Case 2: We can increment without any problem
+      // else (iterator +1 < domain.length)
+
+      return 2
+
+    }
+
+    /**
+      * Go to the next element in the domain
+      * Or loop back to the first element
+      */
+    def increment(): Unit = {
+      iterator += 1
+    }
+
+
   }
 
   /**
-    * Get the next value, in order to create a test
-    *
-    * @param i
+    * Manage the iteration over all domains
     */
-  def getNext(set: RoaringBitmap, i: Int): Unit = {
-    val a: util.Iterator[Integer] = set.iterator()
-    val b = a.next() //envoie une exception si yen a plus
+  case class combinator(var domains: Array[domainParam]) {
 
+    override def toString: String = {
+      var output = ""
+      for (i <- domains) {
+        output += i
+      }
+      output
+    }
+
+    /**
+      * Incrémenter la structure
+      * L'algorithme termine quand tous les domaines ont leur valeur max.
+      *
+      */
+
+
+    /**
+      * Generate the combinations
+      */
+    def generate() = {
+      val tests = new ArrayBuffer[String]()
+      var end = false
+
+      while (!end) {
+
+        val test = toString()
+        tests += test
+        end = increment_left()
+      }
+
+      tests
+
+    }
+
+    /**
+      * We try to increment the domains data structure to produce a new test.
+      * If we cannot increment any of the domains, we return that the end has been reached.
+      *
+      * @return
+      */
+    def increment_left(): Boolean = {
+
+      var i = 0 //this iterator allows us to change to another parameter domain
+      var theEnd = false //0 the end, 1 same parameter, 2 next parameter
+
+      loop;
+      def loop(): Unit = {
+
+        //We have nowhere else to increment. Its over!
+        if (i == domains.length) {
+          theEnd = true
+          return
+        }
+
+        //We can increment. Return and reset the loop
+        //Todo: use enums
+        else if (domains(i).tryIncrement() == 2) {
+          domains(i).increment()
+          return
+        }
+
+        //If we cannot increment this domain, but we can increment the next parameter
+        else if (domains(i).tryIncrement() == 1) {
+          domains(i).reset()
+          i += 1
+        }
+
+        loop
+      }
+
+      theEnd
+    }
+
+  } //fin class combinator
+
+  /**
+    * Always tranform the boolean condition to a set.
+    * We use this with hypergraph vertex covering
+    *
+    * @param aa
+    * @param ith
+    * @return
+    */
+  def condToSET(aa: booleanCondition, ith: Int): ArrayBuffer[Int] = {
+    var bitmap = new ArrayBuffer[Int]()
+
+    //Si on a Rien, alors on retourne la totalité de l'ensemble
+    if (aa.isInstanceOf[EmptyParam]) {
+      for (i <- 0 until domainSizes(ith)) {
+        bitmap += i
+      }
+
+      return bitmap
+    }
+    //Sinon, on y va avec les opérateurs
+
+    val a = aa.asInstanceOf[booleanCond]
+
+    if (a.operator == '=') {
+      bitmap += (a.value)
+    }
+
+    else if (a.operator == '!') {
+      for (i <- 0 until domainSizes(ith)) {
+        if (i != a.value) bitmap += (i)
+      }
+    }
+
+    else if (a.operator == '<') {
+      for (i <- 0 until a.value)
+        bitmap += (i)
+    }
+
+    //Else '>'
+    else {
+      for (i <- a.value + 1 until domainSizes(ith))
+        bitmap += (i)
+    }
+
+    bitmap
   }
-
 
   /**
     * From a clause, we generate every possible test.
@@ -39,28 +200,21 @@ object phiway_hypergraph extends Serializable {
     * This is a global variable.
     *
     */
-  def clauseToTests(clause: clause): Array[String] = {
-
-    var tests = new ArrayBuffer[String]() //Generated tests
-    var sets = new ArrayBuffer[it]()
+  def clauseToTests(clause: clause) = {
 
     //On fait les bitmap compressées a partir des conditions de la clause
     var ii = 0
-    val bitmaps = clause.conds.map(e => {
+    val domains = clause.conds.map(e => {
       val ret = condToSET(e, ii)
       ii += 1
       ret
+    }).map(e => {
+      domainParam(e,0)
     })
 
-    //Loop until we have generated all possible tests
-    loop;
-    def loop(): Unit = {
-      while (true) {
-
-      }
-    }
-
-
+    val dd = combinator(domains)
+    val tests = dd.generate()
+    tests
   }
 
 
@@ -111,10 +265,10 @@ object phiway_hypergraph extends Serializable {
         //Trouver le sommet S qui est présent dans le plus de tTests (Transformation)
         val s1 = currentRDD.mapPartitions(partition => {
           var hashmappp = scala.collection.mutable.HashMap.empty[String, Int]
-          partition.foreach(combo => {
-            val list = clauseToTests(stringToArray(combo), v)
+          partition.foreach(clause => {
+            val list = clauseToTests(clause)
             list.foreach(elem => {
-              val key = arrayToString(elem)
+              val key = elem
               if (hashmappp.get(key).isEmpty) //if entry is empty
                 hashmappp.put(key, 1)
               else
@@ -156,12 +310,12 @@ object phiway_hypergraph extends Serializable {
 
         //Quand on enleve 1000 tests a la fois, c'est trop long...
         //Il faut en enlever moins a la fois.
-        currentRDD = progressive_filter_combo_string(chosenTests.toArray, currentRDD, sc)
+        //currentRDD = progressive_filter_combo_string(chosenTests.toArray, currentRDD, sc)
 
         //Add the M tests to logEdgesChosen
-        chosenTests.foreach(test => {
-          logEdgesChosen += test
-        })
+        //  chosenTests.foreach(test => {
+        //     logEdgesChosen += test
+        //   })
 
         //Checkpoint every 3 iterations
         currentRDD = currentRDD.localCheckpoint()
@@ -212,6 +366,25 @@ object phiway_hypergraph extends Serializable {
 
     //Return the results
     result
+  }
+
+  /**
+    * Petit test rapide de la génération des tests a partir des clauses
+    *
+    * @param args
+    */
+  def main(args: Array[String]): Unit = {
+
+    val conf = new SparkConf().setMaster("local[1]")
+      .setAppName("Phi-way hypergraph vertex covering")
+      .set("spark.driver.maxResultSize", "0")
+    val sc = new SparkContext(conf)
+    sc.setLogLevel("OFF")
+
+    val tt = phiway_hypergraphcover("clauses4.txt", sc)
+    tt.foreach(println)
+
+
   }
 
 }

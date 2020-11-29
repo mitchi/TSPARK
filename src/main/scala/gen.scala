@@ -2,7 +2,7 @@
 
 package central
 
-import central.gen.distributed_graphcoloring
+import central.gen.{distributed_graphcoloring, simple_hypergraphcover}
 import central.test3.sc
 import enumerator.distributed_enumerator
 import ordercoloring.OrderColoring.orderColoring
@@ -980,7 +980,7 @@ object test4 extends App {
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 4
+  var n = 3
   var t = 2
   var v = 2
 
@@ -1003,7 +1003,7 @@ object test5 extends App {
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 500
+  var n = 3
   var t = 2
   var v = 2
 
@@ -1039,6 +1039,17 @@ object test5 extends App {
 // 5!=3 is true, and 3!=5 is true as well.
 
 object test6 extends App {
+
+  val conf = new SparkConf().setMaster("local[1]").setAppName("Test hypergraph")
+    .set("spark.driver.maxResultSize", "0")
+  val sc = new SparkContext(conf)
+  sc.setLogLevel("OFF")
+
+  var n = 3
+  var t = 2
+  var v = 2
+
+  val tests = simple_hypergraphcover(n, t, v, sc)
 
 
 }
