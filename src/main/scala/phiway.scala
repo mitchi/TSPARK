@@ -149,8 +149,6 @@ object phiway extends Serializable {
 
   }
 
-
-
   /**
     * From a cond to an EnsembleOuValeur
     * We use the global domainSize variable
@@ -160,8 +158,6 @@ object phiway extends Serializable {
     * @return
     */
   def condToEOV(aa: booleanCondition, ith: Int): EnsembleOuValeur = {
-
-
     if (aa.isInstanceOf[EmptyParam]) {
       return Rien()
     }

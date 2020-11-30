@@ -229,6 +229,7 @@ object TSPARK {
     import utils.utils.print_combos_in_order
     import ipog.d_ipog_roaring.distributed_ipog_coloring_roaring
     import phiwaycoloring.phiway_coloring._
+    import phiway_hypergraph.phiway_hypergraph._
 
     choice match {
 
@@ -239,7 +240,10 @@ object TSPARK {
         val algorithm = Phiwayparser.algo
 
         val tests = algorithm match {
-          case "HC" => println("Using the hypergraph covering algorithm")
+          case "HC" => {
+            println("Using the hypergraph covering algorithm")
+            phiway_hypergraphcover("clauses1.txt", sc)
+          }
           case "KP" => {
             println("Using the Knights and Peasants graph coloring algorithm")
             start_graphcoloring_phiway(file, sc, chunkSize, "KP")

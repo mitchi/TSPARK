@@ -1,14 +1,191 @@
-import central.gen.filename
+package phiway_hypergraph
+
+import central.gen.{filename, filter_combo, isComboHere}
 import hypergraph_cover.Algorithm2.progressive_filter_combo_string
 import hypergraph_cover.greedypicker.greedyPicker
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
-import utils.utils.{arrayToString, stringToArray}
+import utils.utils.{arrayToString, findTFromCombo, stringToArray}
 import phiway.phiway._
+import phiway.phiway.compatible
 
 import scala.collection.mutable.ArrayBuffer
 
 object phiway_hypergraph extends Serializable {
+
+
+  /**
+    * Compare two tests and return a score of difference.
+    * The idea here is that this function will help in SetCover functions to select tests that have more differences.
+    * The bigger the difference between two tests, the better it is.
+    *
+    * @param test1
+    * @param test2
+    * @return
+    */
+  def differenceScore(test1: String, test2: String): Int = {
+    var difference = 0
+    for (i <- 0 until test1.size) {
+      if (test1(i) != test2(i)) difference += 1
+    }
+    difference
+  }
+
+  /**
+    * This is a greedy algorithm for selecting good tests during the set cover algorithm
+    * We will select a number of tests that are equally good at covering combos.
+    * Then, we will compare the second test to the first test
+    * Then, the third test will be compared to the second and first test and so on.
+    *
+    * We will add a test if its difference with every other test is at least 50%
+    *
+    * Tester dans le futur : Ajouter le check de maxPicks dans cette fonction, au lieu d'envoyer un plus petit tableau
+    *
+    */
+  def greedyPicker(tests: ArrayBuffer[String]): ArrayBuffer[String] = {
+    var chosenTests = new ArrayBuffer[String]()
+    chosenTests += tests(0) //choose the first test right away
+    val sizeOfTests = tests(0).size
+
+    //If there's only one test, return right away
+    if (tests.size < 2) return chosenTests
+    // var j = 1
+
+    for (i <- 1 until tests.size) {
+      var thisTest = tests(i)
+      var j = 0
+
+      var found = true
+
+      //Compare this test to all the others. Pick it if it's always at least 50% different
+      loop
+
+      def loop(): Unit = {
+        if (j == chosenTests.size) return
+        val oneOfTheChosen = chosenTests(j)
+
+        val difference = differenceScore(thisTest, oneOfTheChosen)
+        val diff = (difference.toDouble / sizeOfTests.toDouble) * 100
+
+        //If the test has only a little difference, we don't pick it
+        if (diff < 40.0) {
+          found = false
+          return
+        }
+        j += 1
+        loop
+      }
+
+      //If the test was good, we pick it
+      if (found == true) {
+        chosenTests += thisTest
+      }
+
+    } //end for loop
+    chosenTests
+  }
+
+
+  /**
+    * Compare a clause with a test.
+    * If the test covers the clause, we can delete this clause.
+    *
+    * We compare all the conditions.
+    * When one condition is not compatible, the whole thing is not compatible.
+    * If every condition is compatible, then we can filter out this clause
+    *
+    * @param combo
+    * @param test
+    * @param t
+    * @tparam A
+    * @return
+    */
+  def isClauseHere(theClause: clause, test: String): Boolean = {
+
+    var i = 0
+    var iscompatible = true
+
+    //Decompose the test in several values
+    val values = test.split(";").map(s => s.toShort)
+
+    loop;
+    def loop(): Unit = {
+      for (cond <- theClause.conds) {
+        val cc = booleanCond('=', values(i))
+        val result = compatible(cond, cc)
+        if (result == false) {
+          iscompatible = false;
+          return
+        }
+        i += 1
+      }
+    }
+    //Return found true or false
+    iscompatible
+  }
+
+
+  /**
+    * We filter out a clause using an array of tests
+    */
+  def filter_clause(myClause: clause,
+                    tests: ArrayBuffer[String]): Boolean = {
+
+    var i = 0
+    var end = tests.length
+    var returnValue = false
+
+    loop;
+    def loop(): Unit = {
+      if (i == end) return
+      if (isClauseHere(myClause, tests(i))) {
+        returnValue = true
+        return
+      }
+      i += 1
+      loop
+    }
+
+    !returnValue
+  }
+
+  /**
+    * The problem with the filter combo technique is that it can be very slow when
+    * the test suite becomes very large.
+    * It is better to filter using a fixed number of tests at a time.
+    * Otherwise we will be testing the same combos multiple times.
+    *
+    * @param testSuite
+    * @param combos
+    */
+  def progressive_filter(testSuite: ArrayBuffer[String],
+                         clauses: RDD[clause],
+                         sc: SparkContext,
+                         speed: Int = 50) = {
+    //Find out what the t value is
+    var i = 0
+    val testSuiteSize = testSuite.length
+    var filtered = clauses
+
+    loop;
+    def loop(): Unit = {
+
+      val j = if (i + speed > testSuiteSize) testSuiteSize else i + speed
+      val broadcasted_tests = testSuite.slice(i, j)
+      //Broadcast and filter using these new tests
+      println("Broadcasting the tests, and filtering them")
+      filtered = filtered.filter(combo => filter_clause(combo, broadcasted_tests))
+
+      if ((i + speed > testSuiteSize)) return //if this was the last of the tests
+
+      i = j //update our i
+      filtered.localCheckpoint()
+      loop
+    }
+    //Return the RDD of combos
+    filtered
+  }
 
   /**
     * Manage the available domain for a parameter
@@ -64,7 +241,6 @@ object phiway_hypergraph extends Serializable {
       iterator += 1
     }
 
-
   }
 
   /**
@@ -74,17 +250,17 @@ object phiway_hypergraph extends Serializable {
 
     override def toString: String = {
       var output = ""
-      for (i <- domains) {
-        output += i
+      var lastI = domains.length - 1
+      var i = 0
+
+      for (it <- domains) {
+        if (i == lastI) output += it //Remove last ;
+        else output += it + ";"
+        i += 1
       }
+      //output.substring(0, output.length - 1)
       output
     }
-
-    /**
-      * Incrémenter la structure
-      * L'algorithme termine quand tous les domaines ont leur valeur max.
-      *
-      */
 
 
     /**
@@ -102,7 +278,6 @@ object phiway_hypergraph extends Serializable {
       }
 
       tests
-
     }
 
     /**
@@ -275,15 +450,15 @@ object phiway_hypergraph extends Serializable {
                 hashmappp(key) += 1
             })
           })
-          Iterator(hashmappp)
+          hashmappp.toIterator
         }
         )
 
-        var res = s1.flatMap(hash => hash.toSeq).reduceByKey((a, b) => a + b).collect()
+        var res = s1.reduceByKey((a, b) => a + b).collect()
 
         case class bt(var test: String = "", var count: Int = 0)
         var bestCount = 0
-        var MTests = new ArrayBuffer[Array[Char]]()
+        var MTests = new ArrayBuffer[String]()
         var Mpicks = 0
 
         //First we find the best count
@@ -298,7 +473,7 @@ object phiway_hypergraph extends Serializable {
         res.foreach(elem => {
           if (elem._2 == bestCount && Mpicks != maxPicks) {
             //println(s"We pick a test here. The best count is $bestCount")
-            val toKeep = stringToArray(elem._1)
+            val toKeep = (elem._1)
             MTests += toKeep
             Mpicks += 1
           }
@@ -310,12 +485,12 @@ object phiway_hypergraph extends Serializable {
 
         //Quand on enleve 1000 tests a la fois, c'est trop long...
         //Il faut en enlever moins a la fois.
-        //currentRDD = progressive_filter_combo_string(chosenTests.toArray, currentRDD, sc)
+        currentRDD = progressive_filter(chosenTests, currentRDD, sc)
 
         //Add the M tests to logEdgesChosen
-        //  chosenTests.foreach(test => {
-        //     logEdgesChosen += test
-        //   })
+        chosenTests.foreach(test => {
+          logEdgesChosen += test
+        })
 
         //Checkpoint every 3 iterations
         currentRDD = currentRDD.localCheckpoint()
@@ -381,7 +556,7 @@ object phiway_hypergraph extends Serializable {
     val sc = new SparkContext(conf)
     sc.setLogLevel("OFF")
 
-    val tt = phiway_hypergraphcover("clauses4.txt", sc)
+    val tt = phiway_hypergraphcover("clauses1.txt", sc)
     tt.foreach(println)
 
 
