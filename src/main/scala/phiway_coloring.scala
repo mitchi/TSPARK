@@ -10,10 +10,8 @@ import scala.util.Random
 
 object phiway_coloring extends Serializable {
 
-  var debug = false
-  var save = false
+  var debug = true
   var filename = "results.txt"
-
 
   /**
     * Au lieu d'utiliser un paramètre v, on utilise la variable globale domainsizes
@@ -105,7 +103,7 @@ object phiway_coloring extends Serializable {
             val clauseA = elem._1
             val clauseB = i._1
             val answer = isAdjacent(clauseA, clauseB)
-            println(s"$clauseA adjacentTo $clauseB : $answer")
+            //println(s"$clauseA adjacentTo $clauseB : $answer")
 
             if (answer == true) {
               //Check if lookuptable exists. Create it if it does not
@@ -219,7 +217,7 @@ object phiway_coloring extends Serializable {
               val answer = isAdjacent(elem._1, someClauses(j)._1)
               val t1 = elem._1
               val t2 = someClauses(j)._1
-              println(s"$t1 adjacentTo $t2 : $answer")
+              //println(s"$t1 adjacentTo $t2 : $answer")
 
               if (answer == true)
                 hashtable(i + j).add(thisId.toInt) //add value to roaring bitmap
@@ -403,7 +401,7 @@ object phiway_coloring extends Serializable {
   def phiway_coloring(clauses: RDD[clause],
                       sc: SparkContext,
                       chunkSize: Int,
-                      algorithm: String = "OrderColoring") = {
+                      algorithm: String = "OC") = {
     //First, color 100 000 elements. If the graph is colored, we return. Else we continue here.
     val count = clauses.count()
     val colors = new Array[Int](count.toInt) //colors for every vertex, starting at 0. We pass this data structure around and modify it
@@ -411,25 +409,34 @@ object phiway_coloring extends Serializable {
     //Save the seed so that Spark can regenerate the combos on demand. This would save memory but add CPU time
     //checkpoint to HDFS or on a ssd drive would also work
     val seed = System.nanoTime()
+    println(s"Using seed $seed")
 
     var totalIterations = 0
 
     //Print the combos 1 time
     if (debug == true) {
+
       println("Printing clauses before shuffle")
-      clauses.collect().foreach(println)
+      clauses.mapPartitionsWithIndex((index, iterator) => {
+        var stringPartition = ""
+        stringPartition += "Partition " + index + "\n"
+        iterator.foreach(e => {
+          stringPartition += e + "\n"
+        })
+        Iterator(stringPartition)
+      }).collect().foreach(println)
     }
 
     //Shuffle the combos before. Doing this ensures a different result every run.
     var myclauses = clauses.mapPartitions(it => {
-
-      //  if (debug == true) {
-        Random.setSeed(1)
-      //  }
-      //else Random.setSeed(seed)
+      //        if (debug == true) {
+      //        Random.setSeed(1)
+      //        }
+      //else
+      Random.setSeed(seed)
 
       Random.shuffle(it)
-    }, true)
+    }, true).cache()
 
     //Print the combos 1 time
     if (debug == true) {
@@ -527,9 +534,11 @@ object phiway_coloring extends Serializable {
       //Use KP when the graph is sparse (not dense)
       val r2 =
         if (algorithm == "KP") {
+          println("Calling the K&P algorithm using the compressed graph chunk...")
           roaringkp.roaringkp.progressiveKP(colors, r1, r1.count().toInt, maxColor, sc)
         }
         else { //algorithm = "OC". The single threaded needs a sorted matrix of adjlists
+          println("Calling the Order Coloring algorithm using the compressed graph chunk...")
           ordercoloring(colors, r1.collect().sortBy(_._1), i, maxColor)
         }
 
@@ -572,8 +581,7 @@ object phiway_coloring extends Serializable {
 
     //For all tests. Write them to the file
     for (test <- tests) {
-      val a = print(test)
-      pw.append(s"$a\n")
+      pw.append(s"$test\n")
       pw.flush()
     }
     //Close the file
@@ -598,10 +606,11 @@ object phiway_coloring extends Serializable {
     val clauses = readPhiWayClauses(clausesFile)
     val number = clauses.size
 
+    println("Phi-way testing using")
     println("Distributed Graph Coloring with Roaring bitmaps")
     println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Using a set of phiway clauses instead of interaction strength")
-    println(s"Problem : and $number clauses")
+    println(s"Problem: $clausesFile with $number clauses")
 
     import java.io._
     val pw = new PrintWriter(new FileOutputStream(filename, true))
@@ -618,10 +627,11 @@ object phiway_coloring extends Serializable {
     pw.flush()
 
     //If the option to save to a text file is activated
+    import cmdlineparser.TSPARK.save
     if (save == true) {
-      println(s"Saving the test suite to a file named $number.txt")
+      println(s"Saving the test suite to a file named ${clausesFile}results.txt")
       //Save the test suite to file
-      saveTestSuite(s"$number.txt", tests)
+      saveTestSuite(s"${clausesFile}results.txt", tests)
     }
 
     //Return the test suite
@@ -631,13 +641,13 @@ object phiway_coloring extends Serializable {
   /** Petits tests de phiway coloring */
   def main(args: Array[String]): Unit = {
 
-    val conf = new SparkConf().setMaster("local[1]")
+    val conf = new SparkConf().setMaster("local[2]")
       .setAppName("Phi-way graph coloring")
       .set("spark.driver.maxResultSize", "0")
     val sc = new SparkContext(conf)
     sc.setLogLevel("OFF")
 
-    val tests = start_graphcoloring_phiway("clauses3.txt", sc, 6)
+    val tests = start_graphcoloring_phiway("clauses1.txt", sc, 6)
     tests.foreach(println)
   }
 

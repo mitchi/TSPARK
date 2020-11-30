@@ -13,6 +13,8 @@ import Console._
 
 object TSPARK {
 
+  var save = false //global variable. Other functions import this
+
   //Support for colors in Windows with the ANSICON executable.
   //https://stackoverflow.com/questions/16755142/how-to-make-win32-console-recognize-ansi-vt100-escape-sequences
   //http://adoxa.altervista.org/ansicon/
@@ -31,7 +33,7 @@ object TSPARK {
     var algo = opt[String](name = "algorithm", description = "algorithm to use: OC,KP or HC", default = "OC")
     //var help = opt[Boolean](name = "help", description = "Display help for phiway")
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk of vertices to use for graph coloring. Default is 4000", default = 4000)
-    var saveFile = opt[String](name = "outputfile", description = "Output the tests to a file instead of Standard output", default = "tests.txt")
+    var save = opt[Boolean](name = "save", description = "Save the test suite to a text file")
   }
 
   //Nouvel objet pour Distributed IPOG avec Roaring
@@ -238,6 +240,8 @@ object TSPARK {
         val file = Phiwayparser.filename
         val chunkSize = Phiwayparser.chunkSize
         val algorithm = Phiwayparser.algo
+        val doSave = Phiwayparser.save
+        if (doSave == true) save = true
 
         val tests = algorithm match {
           case "HC" => {
@@ -252,8 +256,14 @@ object TSPARK {
             println("Using the Order Coloring graph coloring algorithm")
             start_graphcoloring_phiway(file, sc, chunkSize, "OC")
           }
-          case _ => println(s"Incorrect algorithm $algorithm")
+          case _ => {
+            println(s"Incorrect algorithm $algorithm")
+            Array("")
+          }
         }
+
+        tests.foreach(println)
+
         //val tests = start_graphcoloring_phiway(file, sc, chunkSize, "OC")
 
       }

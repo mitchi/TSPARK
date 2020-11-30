@@ -9,6 +9,7 @@ import org.apache.spark.rdd.RDD
 import utils.utils.{arrayToString, findTFromCombo, stringToArray}
 import phiway.phiway._
 import phiway.phiway.compatible
+import phiwaycoloring.phiway_coloring.saveTestSuite
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -509,9 +510,14 @@ object phiway_hypergraph extends Serializable {
     */
   def phiway_hypergraphcover(clausesFile: String, sc: SparkContext): Array[String] = {
 
-    println("Hypergraph Vertex Cover for Phi-way testing")
     val clauses = readPhiWayClauses(clausesFile)
+    val number = clauses.length
     val clausesRDD = sc.makeRDD(clauses)
+
+    println("Hypergraph Vertex Cover for Phi-way testing")
+    println(s"Using a set of phiway clauses instead of interaction strength")
+    println(s"Problem: $clausesFile with $number clauses")
+
     //println(s"Working with a Phi-way set of $number clauses")
 
     //Write to results.txt
@@ -520,27 +526,26 @@ object phiway_hypergraph extends Serializable {
 
     var t1 = System.nanoTime()
     //Now we have the combos, we ship them directly to the setcover algorithm
-
-    val result = greedyalgorithm(sc, clausesRDD)
-
+    val tests = greedyalgorithm(sc, clausesRDD)
     var t2 = System.nanoTime()
     var time_elapsed = (t2 - t1).toDouble / 1000000000
     println(s"Hypergraph vertex cover time: $time_elapsed seconds")
-    println("We have found " + result.size + " tests")
+    println("We have found " + tests.size + " tests")
 
-    pw.append(s"$clausesFile;PHIWAY_HYPERGRAPH;$time_elapsed;${result.size}\n")
-    println(s"$clausesFile;PHIWAY_HYPERGRAPH;$time_elapsed;${result.size}\n")
+    pw.append(s"$clausesFile;PHIWAY_HYPERGRAPH;$time_elapsed;${tests.size}\n")
+    println(s"$clausesFile;PHIWAY_HYPERGRAPH;$time_elapsed;${tests.size}\n")
     pw.flush()
 
-//    //If the option to save to a text file is activated
-//    if (save == true) {
-//      println(s"Saving the test suite to a file named $t;$n;$v.txt")
-//      //Save the test suite to file
-//      saveTestSuite(s"$t;$n;$v.txt", result)
-//    }
+    //If the option to save to a text file is activated
+    import cmdlineparser.TSPARK.save
+    if (save == true) {
+      println(s"Saving the test suite to a file named ${clausesFile}results.txt")
+      //Save the test suite to file
+      saveTestSuite(s"${clausesFile}results.txt", tests)
+    }
 
     //Return the results
-    result
+    tests
   }
 
   /**
