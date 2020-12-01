@@ -598,13 +598,14 @@ object phiway_coloring extends Serializable {
     * @param sc
     * @return
     */
-  def start_graphcoloring_phiway(clausesFile: String, sc: SparkContext,
+  def start_graphcoloring_phiway(clausesFile: String, t: Int = 0, sc: SparkContext,
                                  chunkSize: Int = 4000, algorithm: String = "OrderColoring"):
   Array[String] = {
 
     //Read the clauses and the domain sizes
     val clauses = readPhiWayClauses(clausesFile)
     val number = clauses.size
+    var clausesRDD = sc.makeRDD(clauses)
 
     println("Phi-way testing using")
     println("Distributed Graph Coloring with Roaring bitmaps")
@@ -612,12 +613,18 @@ object phiway_coloring extends Serializable {
     println(s"Using a set of phiway clauses instead of interaction strength")
     println(s"Problem: $clausesFile with $number clauses")
 
+    //If t parameter is valid
+    if (t > 1 && t < domainSizes.length) {
+      println(s"Interaction strength t=$t clauses are being added using RDD.union right now...")
+      clausesRDD = clausesRDD.union(fastGenClauses(t, sc))
+    }
+
     import java.io._
     val pw = new PrintWriter(new FileOutputStream(filename, true))
 
     var t1 = System.nanoTime()
 
-    val tests = phiway_coloring(sc.makeRDD(clauses), sc, chunkSize, algorithm)
+    val tests = phiway_coloring(clausesRDD, sc, chunkSize, algorithm)
 
     var t2 = System.nanoTime()
     var time_elapsed = (t2 - t1).toDouble / 1000000000
@@ -647,7 +654,7 @@ object phiway_coloring extends Serializable {
     val sc = new SparkContext(conf)
     sc.setLogLevel("OFF")
 
-    val tests = start_graphcoloring_phiway("clauses1.txt", sc, 6)
+    val tests = start_graphcoloring_phiway("clauses1.txt", 0, sc, 6)
     tests.foreach(println)
   }
 

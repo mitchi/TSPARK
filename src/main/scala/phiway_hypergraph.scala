@@ -508,15 +508,22 @@ object phiway_hypergraph extends Serializable {
   /**
     * Here we execute a simple setcover algorithm
     */
-  def phiway_hypergraphcover(clausesFile: String, sc: SparkContext): Array[String] = {
+  def phiway_hypergraphcover(clausesFile: String, sc: SparkContext, t: Int = 0): Array[String] = {
 
     val clauses = readPhiWayClauses(clausesFile)
     val number = clauses.length
-    val clausesRDD = sc.makeRDD(clauses)
+    var clausesRDD = sc.makeRDD(clauses)
+
 
     println("Hypergraph Vertex Cover for Phi-way testing")
     println(s"Using a set of phiway clauses instead of interaction strength")
     println(s"Problem: $clausesFile with $number clauses")
+
+    //If t parameter is valid
+    if (t > 1 && t < domainSizes.length) {
+      println(s"Interaction strength t=$t clauses are being added using RDD.union right now...")
+      clausesRDD = clausesRDD.union(fastGenClauses(t, sc))
+    }
 
     //println(s"Working with a Phi-way set of $number clauses")
 
@@ -561,7 +568,7 @@ object phiway_hypergraph extends Serializable {
     val sc = new SparkContext(conf)
     sc.setLogLevel("OFF")
 
-    val tt = phiway_hypergraphcover("clauses1.txt", sc)
+    val tt = phiway_hypergraphcover("clauses5.txt", sc, 2)
     tt.foreach(println)
 
 

@@ -1,5 +1,8 @@
 package phiway
 
+import enumerator.distributed_enumerator._
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 
 import scala.collection.mutable.ArrayBuffer
@@ -31,6 +34,165 @@ object phiway extends Serializable {
     def apply(i: Int) = eovs(i)
   }
 
+
+  /**
+    * Phi-way version.
+    * We copy the combinations inside a pv object, then we clone it.
+    *
+    * @param combinations
+    * @param indexes
+    * @param pv
+    */
+  def copycombinations(combinations: Array[Short],
+                       indexes: ArrayBuffer[Int],
+                       pv: Array[Short]): Unit = {
+
+    var i = 0
+
+    def loop(): Unit = {
+
+      if (i == combinations.length) return
+
+      //Get the value of the combi
+      val valueCombi = combinations(i)
+      //get the index
+      val index = indexes(i)
+      //Replace inside pv
+      pv(index) = valueCombi
+
+      i += 1
+
+      loop
+    }
+
+    loop
+  }
+
+
+  /**
+    * Increment left. Phi-way version
+    *
+    * @param combinations
+    * @return
+    */
+  def increment_left(combinations: Array[Short]): Boolean = {
+    var i: Int = 0
+    var theEnd = false //whether or not its over
+    //var valueToAdd : Byte = 1
+
+    def loop(): Unit = {
+
+      //We have finished filling the table
+      if (i == combinations.length) {
+        theEnd = true
+        return
+      }
+
+      //We can still increment here
+      if (combinations(i) + 1 < domainSizes(i)) {
+        combinations(i) = (combinations(i) + 1).toShort
+        return
+      }
+
+      //We cannot increment
+      else if (combinations(i) + 1 == domainSizes(i)) {
+        combinations(i) = 0
+        i += 1
+      }
+
+      loop
+    }
+
+    loop
+
+    theEnd
+
+  }
+
+
+  /**
+    * Create a new clause, from an array of shorts.
+    * -1 indicates that there is no parameter. Everything is is the value combination.
+    *
+    * @param shorts
+    * @return
+    */
+  def makeNew(shorts: Array[Short]) = {
+    //We create a new clause object
+    val tmp: Array[booleanCondition] = shorts.map(num => {
+      if (num == -1) EmptyParam()
+      else booleanCond(operator = '=', value = num)
+    })
+    clause(tmp)
+  }
+
+
+  /** Main code to generate the value combinations from a paramater vector
+    *
+    * Algorithm : First we generate a small array called combinations. This is where we enumerate value combinations.
+    * Then, we iterate and store the indexes of the parameter vector.
+    * We store the value combination in the parameter vector. We clone the parameter vector and store the object in a return array.
+    * We generate the next value combination, and repeat this process until every value combo has been enumerated.
+    * We return the t-way combos at the end.
+    * */
+  def generate_value_combinations(tab: Array[Char],
+                                  t: Int): ArrayBuffer[clause] = {
+
+    //1. Generate a small array to combine everything
+    //Create initial vector
+    var combinations = new Array[Short](t)
+    for (i <- 0 until t) {
+      combinations(i) = 0
+    }
+
+    //First we note the index of each parameter = 1. This way, we can access them directly afterwards
+    var indexes = new ArrayBuffer[Int]()
+
+    //Now we find all the 1s in the parameter vector. We put their index inside the indexes array
+    var i = tab.length - 1
+    while (i != -1) {
+      if (tab(i) == '1') indexes += i
+      i -= 1
+    }
+
+    var newtab = tab.map(e => (-1).toShort)
+    var results = new ArrayBuffer[clause]()
+    var end = false
+
+    while (!end) {
+
+      //Store this combination of values into the parameter vector
+      copycombinations(combinations, indexes, newtab)
+      results += makeNew(newtab)
+      end = increment_left(combinations)
+    }
+    results
+  }
+
+
+  /**
+    * This is the Phi-way version of this function.
+    * This function generates Phi-way clauses using the interaction strength of a given problem.
+    * We rely on the domainSizes global variable for enumeration.
+    * These clauses can then be joined to the other clauses before solving a problem.
+    *
+    * @param n
+    * @param t
+    * @param v
+    * @param sc SparkContext
+    * @return RDD of combos
+    */
+  def fastGenClauses(t: Int, sc: SparkContext) = {
+
+    val n = domainSizes.length
+
+    //Step 1 : Cover t parameters
+    val steps = generate_all_steps(n, t)
+    val r1 = sc.makeRDD(steps) //Parallelize the steps
+    val r2 = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
+    var clausesRDD = r2.flatMap(pv => generate_value_combinations(pv, t)) //removed cache here. Functions have to cache on their own
+    clausesRDD
+  }
 
   /**
     * We take a reduced EOV clause, and produce a test with it
@@ -213,6 +375,8 @@ object phiway extends Serializable {
 
     //Pour utiliser () pour adresser les conds directement
     def apply(i: Int) = conds(i)
+
+
 
     override def toString: String = {
       var output = ""
@@ -443,8 +607,17 @@ object phiway extends Serializable {
 
   //https://docs.scala-lang.org/overviews/scala-book/match-expressions.html
   def main(args: Array[String]): Unit = {
-    val clauses = readPhiWayClauses("clauses.txt")
-    clauses.foreach(println)
+
+    val clauses = readPhiWayClauses("clauses1.txt")
+
+    val conf = new SparkConf().setMaster("local[2]")
+      .setAppName("Phi-way graph coloring")
+      .set("spark.driver.maxResultSize", "0")
+    val sc = new SparkContext(conf)
+    sc.setLogLevel("OFF")
+
+    val clauses2 = fastGenClauses(2, sc).collect()
+    clauses2.foreach(println)
   }
 
 } //fin object phiway

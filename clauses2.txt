@@ -1,7 +1,7 @@
-#Mettre le domain size en première ligne
-#a-b-c
+#Domain size for parameters a,b,c
 9-2-2
-
+#The next four lines are boolean clauses
+#X is written when the parameter is not used
 <5;0;X
 !2;X;1
 !3;0;1

@@ -47,6 +47,7 @@ ANSICON: http://adoxa.altervista.org/ansicon/
 TSPARK is used using a command line interface:
 
 ```
+
 TSPARK - a distributed testing tool
 
 Usage
@@ -104,6 +105,13 @@ Commands
       -s, --st        : use single threaded coloring
       <filename> : file name of the .dot file
 
+   phiway [command options] <clauses> : Phi-way testing from a list of clauses
+      --algorithm=STRING : algorithm to use: OC,KP or HC
+      --chunksize=NUM    : Chunk of vertices to use for graph coloring. Default is 4000
+      --save             : Save the test suite to a text file
+      --t=NUM            : Generate and join additional clauses using interaction strength t
+      <clauses> : filename for the list of clauses
+
    pv <t> <n> : enumerate parameter vectors
       <t> : interaction strength
       <n> : number of parameters
@@ -114,7 +122,7 @@ Commands
       <n> : number of parameters
       <v> : domain size of a parameter
 
-No command found, expected one of color, dcoloring, dhgraph, dicr, dih, edn, graphviz, pv, tway
+No command found, expected one of color, dcoloring, dhgraph, dicr, dih, edn, graphviz, phiway, pv, tway
 ```
 
 

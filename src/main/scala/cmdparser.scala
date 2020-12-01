@@ -34,6 +34,7 @@ object TSPARK {
     //var help = opt[Boolean](name = "help", description = "Display help for phiway")
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk of vertices to use for graph coloring. Default is 4000", default = 4000)
     var save = opt[Boolean](name = "save", description = "Save the test suite to a text file")
+    var t = opt[Int](name = "t", description = "Generate and join additional clauses using interaction strength t", default = 0)
   }
 
   //Nouvel objet pour Distributed IPOG avec Roaring
@@ -243,18 +244,20 @@ object TSPARK {
         val doSave = Phiwayparser.save
         if (doSave == true) save = true
 
+        val t = Phiwayparser.t
+
         val tests = algorithm match {
           case "HC" => {
             println("Using the hypergraph covering algorithm")
-            phiway_hypergraphcover("clauses1.txt", sc)
+            phiway_hypergraphcover(file, sc, t)
           }
           case "KP" => {
             println("Using the Knights and Peasants graph coloring algorithm")
-            start_graphcoloring_phiway(file, sc, chunkSize, "KP")
+            start_graphcoloring_phiway(file, t, sc, chunkSize, "KP")
           }
           case "OC" => {
             println("Using the Order Coloring graph coloring algorithm")
-            start_graphcoloring_phiway(file, sc, chunkSize, "OC")
+            start_graphcoloring_phiway(file, t, sc, chunkSize, "OC")
           }
           case _ => {
             println(s"Incorrect algorithm $algorithm")
