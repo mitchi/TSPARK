@@ -1,4 +1,4 @@
-#Mettre le domain size ici
+#Domain size, first line
 2-2-2
 0;0;X
 0;1;X

@@ -109,7 +109,7 @@ object OrderColoring {
     val vertices_bcast = sc.broadcast(vertices)
 
     //Generate a random sequence, then execute the graph coloring algorithm
-    val s1 = sc.makeRDD(1 to numberProcessors, numberProcessors).mapPartitionsWithIndex((index, it) => {
+    val s1: RDD[Array[Array[Char]]] = sc.makeRDD(1 to numberProcessors, numberProcessors).mapPartitionsWithIndex((index, it) => {
       var sequence: ArrayBuffer[Int] = new ArrayBuffer[Int]()
       for (i <- 0 until count.toInt) sequence += i
       Random.setSeed(System.nanoTime() + index.toLong)

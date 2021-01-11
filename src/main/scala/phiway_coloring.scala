@@ -654,7 +654,7 @@ object phiway_coloring extends Serializable {
     val sc = new SparkContext(conf)
     sc.setLogLevel("OFF")
 
-    val tests = start_graphcoloring_phiway("clauses1.txt", 0, sc, 6)
+    val tests = start_graphcoloring_phiway("clauses2.txt", 0, sc, 6)
     tests.foreach(println)
   }
 
