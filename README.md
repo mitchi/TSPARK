@@ -128,35 +128,41 @@ No command found, expected one of color, dcoloring, dhgraph, dicr, dih, edn, gra
 
 ## Slurm
 
-```
-Here is a sample script:
+A sample script
+Here, we use 160 cpus on 20 different computers
+Each computer is an executor with 8 cpus
 
-    #!/bin/bash
-    #SBATCH --account=********
-    #SBATCH --time=24:00:00
-    #SBATCH --nodes=16
-    #SBATCH --mem=64G
-    #SBATCH --cpus-per-task=8
-    #SBATCH --ntasks-per-node=1
-    
-    module load spark/2.4.4
-    
-    # Recommended settings for calling Intel MKL routines from multi-threaded applications
-    # https://software.intel.com/en-us/articles/recommended-settings-for-calling-intel-mkl-routines-from-multi-threaded-applications 
-    export MKL_NUM_THREADS=1
-    export SPARK_IDENT_STRING=$SLURM_JOBID
-    export SPARK_WORKER_DIR=$SLURM_TMPDIR
-    export SLURM_SPARK_MEM=$(printf "%.0f" $((${SLURM_MEM_PER_NODE} *95/100)))
-    
-    start-master.sh
-    sleep 5
-    MASTER_URL=$(grep -Po '(?=spark://).*' $SPARK_LOG_DIR/spark-${SPARK_IDENT_STRING}-org.apache.spark.deploy.master*.out)
-    
-    NWORKERS=$((SLURM_NTASKS - 1))
-    #SPARK_NO_DAEMONIZE=1 srun -n ${NWORKERS} -N ${NWORKERS} --label --output=$SPARK_LOG_DIR/spark-%j-workers.out start-slave.sh -m ${SLURM_SPARK_MEM}M -c ${SLURM_CPUS_PER_TASK} ${MASTER_URL} &
-    slaves_pid=$!
-     
-    srun -n 1 -N 1 spark-submit --master ${MASTER_URL} --executor-memory ${SLURM_SPARK_MEM}M TSPARK.jar dhgraph 7 10 4
-    
-    kill $slaves_pid
+```
+#!/bin/bash
+#SBATCH --account=edmond
+#SBATCH --time=01:00:00
+#SBATCH --nodes=20
+#SBATCH --mem=4G
+#SBATCH --cpus-per-task=8
+#SBATCH --ntasks-per-node=1
+
+module load StdEnv/2020
+module load spark/3.0.0
+
+# Recommended settings for calling Intel MKL routines from multi-threaded applications
+# https://software.intel.com/en-us/articles/recommended-settings-for-calling-intel-mkl-routines-from-multi-threaded-applications 
+export MKL_NUM_THREADS=1
+export SPARK_IDENT_STRING=$SLURM_JOBID
+export SPARK_WORKER_DIR=$SLURM_TMPDIR
+export SLURM_SPARK_MEM=$(printf "%.0f" $((${SLURM_MEM_PER_NODE} *95/100)))
+
+start-master.sh
+sleep 5
+MASTER_URL=$(grep -Po '(?=spark://).*' $SPARK_LOG_DIR/spark-${SPARK_IDENT_STRING}-org.apache.spark.deploy.master*.out)
+
+NWORKERS=$((SLURM_NTASKS - 1))
+SPARK_NO_DAEMONIZE=1 srun -n ${NWORKERS} -N ${NWORKERS} --label --output=$SPARK_LOG_DIR/spark-%j-workers.out start-slave.sh -m ${SLURM_SPARK_MEM}M -c ${SLURM_CPUS_PER_TASK} ${MASTER_URL} &
+slaves_pid=$!
+
+SLURM_SPARK_SUBMIT="srun -n 1 -N 1 spark-submit --master ${MASTER_URL} --executor-memory ${SLURM_SPARK_MEM}M"
+$SLURM_SPARK_SUBMIT --conf "spark.default.parallelism=160" --class cmdlineparser.TSPARK tspark.jar dcoloring 7 8 4
+
+
+kill $slaves_pid
+stop-master.sh
 ```
