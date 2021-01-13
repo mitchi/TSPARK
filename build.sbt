@@ -1,11 +1,11 @@
 name := "TSPARK2"
-version := "0.1"
+version := "0.2"
 scalaVersion := "2.12.10"
 
 updateOptions := updateOptions.value.withCachedResolution(true)
 
-libraryDependencies += "org.apache.spark" %% "spark-sql" % "2.4.4"
-libraryDependencies += "org.apache.spark" %% "spark-graphx" % "2.4.4"
+libraryDependencies += "org.apache.spark" %% "spark-sql" % "3.0.0"
+libraryDependencies += "org.apache.spark" %% "spark-graphx" % "3.0.0"
 
 libraryDependencies ++= Seq(
   "org.backuity.clist" %% "clist-core" % "3.5.1",

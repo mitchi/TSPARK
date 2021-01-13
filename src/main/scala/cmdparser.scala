@@ -2,18 +2,20 @@ package cmdlineparser
 
 import java.io.File
 import java.nio.file.Paths
-
 import cmdline.MainConsole.args2maps
 import cmdlineparser.TSPARK.CommonOpt
 import org.apache.spark.{SparkConf, SparkContext}
 import org.backuity.clist._
 import enumerator.distributed_enumerator._
+import org.apache.spark.sql.SparkSession
 
 import Console._
 
 object TSPARK {
 
   var save = false //global variable. Other functions import this
+
+  var logLevelError = false
 
   //Support for colors in Windows with the ANSICON executable.
   //https://stackoverflow.com/questions/16755142/how-to-make-win32-console-recognize-ansi-vt100-escape-sequences
@@ -217,12 +219,47 @@ object TSPARK {
       .withDescription("a distributed testing tool")
       .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, D_ipog_coloring_roaring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
 
-
     //Create the Spark Context if it does not already exist
     //The options of Spark can be set using the params of the program
-    val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK")
-    val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
-    sc.setLogLevel("OFF")
+    //val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK")
+    //val sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
+    //sc.setLogLevel("OFF")
+
+    //https://cdn.vanderbilt.edu/vu-wp0/wp-content/uploads/sites/157/2017/10/26210455/GPU_Cluster4.pdf
+   // val spark = SparkSession
+  //    .builder
+    //  .appName("SparkLR")
+    //  .getOrCreate()
+
+    var sc : SparkContext = null
+
+    try {
+      sc =  SparkContext.getOrCreate()
+      if (logLevelError == true)
+        sc.setLogLevel("ERROR")
+    }
+    catch {
+      case _ => println("Looks like the program is local, and not launched from a cluster. We will be instantiating a LOCAL[*] CLUSTER")
+      val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK")
+        sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
+        if (logLevelError == true)
+          sc.setLogLevel("ERROR")
+    }
+
+
+    //val spark = SparkSession.builder.appName("TSPARK").getOrCreate() //on recupere le spark du cluster
+
+    println(s"Printing sc.appname : ${sc.appName}")
+    println(s"Printing default partitions : ${sc.defaultMinPartitions}")
+    println(s"Printing sc.master : ${sc.master}")
+    println(s"Printing sc.sparkUser : ${sc.sparkUser}")
+    println(s"Printing sc.resources : ${sc.resources}")
+    println(s"Printing sc.deploymode : ${sc.deployMode}")
+    println(s"Printing sc.defaultParallelism : ${sc.defaultParallelism}")
+
+    println(s"Printing sc.conf : ${sc.getConf}")
+    //println(s"Printing spark.conf : ${spark.conf}")
+    println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
     import central.gen.singlethreadcoloring
     import central.gen.verifyTS

@@ -163,6 +163,8 @@ object roaring_coloring extends Serializable {
     //val combosNumbered = mycombos.zipWithIndex().cache()
     val combosNumbered: RDD[(Array[Char], Long)] = assign_numberClauses(mycombos, sc).cache()
 
+    println("Shuffling and numbering the clauses is complete")
+
     //We no longer need combos
     combos.unpersist(false)
 
@@ -297,6 +299,10 @@ object roaring_coloring extends Serializable {
     //First step is to group every combo with every other combo to do a MapReduce.
     val bcastdata = sc.broadcast(combosToColor)
     val chunkSize = combosToColor.size
+
+    //Print the number of partitions we are using
+    val partitions = combos.getNumPartitions
+    println(s"Currently using $partitions partitions")
 
     //For every partition, we build a hash table of COMBO -> List of neighbors (all neighbors are strictly less than combo)
     val r1 = combos.mapPartitions(partition => {
