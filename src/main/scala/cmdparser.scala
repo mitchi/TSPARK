@@ -15,7 +15,7 @@ object TSPARK {
 
   var save = false //global variable. Other functions import this
 
-  var logLevelError = false
+  var logLevelError = true
 
   //Support for colors in Windows with the ANSICON executable.
   //https://stackoverflow.com/questions/16755142/how-to-make-win32-console-recognize-ansi-vt100-escape-sequences
@@ -41,7 +41,7 @@ object TSPARK {
 
   //Nouvel objet pour Distributed IPOG avec Roaring
   object D_ipog_coloring_roaring extends Command(name = "dicr",
-    description = "Distributed Ipog-coloring") with CommonOpt {
+    description = "Distributed IPOG-Coloring using compressed graphs") with CommonOpt {
 
     var t = arg[Int](name = "t",
       description = "interaction strength")
@@ -97,7 +97,7 @@ object TSPARK {
 
  //Single threaded coloring with Order Coloring
   object Color extends Command(name = "color",
-    description = "single threaded graph coloring") with CommonOpt {
+    description = "Single Threaded Graph Coloring") with CommonOpt {
 
     var t = arg[Int](name = "t",
       description = "interaction strength")
@@ -114,7 +114,7 @@ object TSPARK {
 
 
   object D_ipog_coloring extends Command(name = "dic",
-    description = "distributed ipog coloring") with CommonOpt {
+    description = "Distributed Ipog-Coloring") with CommonOpt {
 
     var t = arg[Int](name = "t",
       description = "interaction strength")
@@ -125,14 +125,14 @@ object TSPARK {
     var v = arg[Int](name = "v",
       description = "domain size")
 
-    var hstep = opt[Int](name = "hstep", description = "Number of parameters of tests to extend in parallel")
+    var hstep = opt[Int](name = "hstep", description = "Number of parameters of tests to extend in parallel", default = -1)
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
     var st = opt[Boolean](name = "st", abbrev = "s", description = "use single threaded coloring")
     var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run", default = 6)
   }
 
   object D_ipog_hypergraph extends Command(name = "dih",
-    description = "distributed ipog hypergraph cover") with CommonOpt {
+    description = "Distributed Ipog Hypergraph Cover") with CommonOpt {
 
     var t = arg[Int](name = "t",
       description = "interaction strength")
@@ -143,13 +143,13 @@ object TSPARK {
     var v = arg[Int](name = "v",
       description = "domain size")
 
-    var hstep = opt[Int](name = "hstep", description = "Number of parameters of tests to extend in parallel")
-    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
+    var hstep = opt[Int](name = "hstep", description = "Number of parameters of tests to extend in parallel", default = -1)
+    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite", default = false)
     var vstep = opt[Int](name = "vstep", description = "Covering speed (optional)", default = -1)
   }
 
   //Distributed Graph Coloring
-  object Coloring extends Command(name = "dcolor", description = "distributed graph coloring") with CommonOpt {
+  object Coloring extends Command(name = "dcolor", description = "Distributed Graph Coloring") with CommonOpt {
 
     var t = arg[Int](name = "t",
       description = "interaction strength")
@@ -217,7 +217,7 @@ object TSPARK {
       .version("1.0.0")
       .withProgramName("TSPARK")
       .withDescription("a distributed testing tool")
-      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, D_ipog_coloring_roaring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
+      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
 
     //Create the Spark Context if it does not already exist
     //The options of Spark can be set using the params of the program
