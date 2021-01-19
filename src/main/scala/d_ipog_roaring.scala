@@ -12,20 +12,22 @@ import utils.utils.{containsStars, saveTestSuite}
 import utils.utils
 import roaringcoloring.roaring_coloring.coloring_roaring
 
+import cmdlineparser.TSPARK.save
+
+
 object d_ipog_roaring {
 
-
   var debug = false //debug global variable
-
+  import cmdlineparser.TSPARK.resume
 
   /**
-    * Takes a test suite that contains missing values, and remaining combos, and uses a graph coloring algorithm.
+    * Fonction utilisée par D-IpogColoring-Roaring
     *
     * @param tests
     * @return
     */
   def entergraphcoloring(tests: Array[Array[Char]], combos: RDD[Array[Char]],
-                         sc: SparkContext, v: Int, numberProcessors: Int = 0, chunksize: Int = 20000,
+                         sc: SparkContext, chunksize: Int = 20000,
                          algorithm: String = "OC"): Array[Array[Char]] = {
 
     //Union the incomplete tests and the combos. And remove the incomplete tests from the test set
@@ -46,12 +48,7 @@ object d_ipog_roaring {
 
     var input = combos.collect union incompleteTests
 
-    var coloredTests = if (numberProcessors > 0) {
-      orderColoring(numberProcessors, input, sc)
-    }
-    else {
-      coloring_roaring(sc.makeRDD(input), sc, chunksize, algorithm)
-    }
+    var coloredTests = coloring_roaring(sc.makeRDD(input), sc, chunksize, algorithm)
 
     coloredTests ++ testsWithoutStars
   }
@@ -66,12 +63,10 @@ object d_ipog_roaring {
     * @return
     */
   def distributed_ipog_coloring_roaring(n: Int, t: Int, v: Int, sc: SparkContext,
-                                        numberProcessors: Int = 0, hstep: Int = -1,
-                                        resume: Option[resume_info] = None,
+                                        hstep: Int = -1,
                                         chunksize: Int = 20000, algorithm: String = "OC"): Array[Array[Char]] = {
     val expected = utils.numberTWAYCombos(n, t, v)
     println("Parallel IPOG ROARING with M tests")
-    println(s"Number of parallel graph colorings : $numberProcessors")
     println(s"Chunk size: $chunksize vertices")
     println(s"Algorithm : $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
@@ -147,8 +142,7 @@ object d_ipog_roaring {
           newCombos.collect().foreach(utils.print_helper(_))
         }
 
-        // tests = entergraphcoloring(tests, newCombos, sc, v)
-        tests = entergraphcoloring(tests, newCombos, sc, v, numberProcessors, chunksize, algorithm)
+        tests = entergraphcoloring(tests, newCombos, sc, chunksize, algorithm)
       }
 
       i += 1 //move to another parameter

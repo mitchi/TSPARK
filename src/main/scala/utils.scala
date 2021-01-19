@@ -241,7 +241,7 @@ This function generates a random sequence of numbers of the desired interval and
 
     //For all tests. Write them to the file
     for (test <- tests) {
-      val a = print(test)
+      val a = print_helper2(test)
       pw.append(s"$a\n")
       pw.flush()
     }

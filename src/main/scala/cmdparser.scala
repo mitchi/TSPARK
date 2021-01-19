@@ -3,6 +3,7 @@ package cmdlineparser
 import java.io.File
 import java.nio.file.Paths
 import cmdline.MainConsole.args2maps
+import cmdline.resume_info
 import cmdlineparser.TSPARK.CommonOpt
 import org.apache.spark.{SparkConf, SparkContext}
 import org.backuity.clist._
@@ -14,8 +15,9 @@ import Console._
 object TSPARK {
 
   var save = false //global variable. Other functions import this
-
   var logLevelError = true
+  var compressRuns = false //global variable, imported and used by Distributed Coloring
+  var resume: Option[resume_info] = None //Contains a file and a parameter. Used to resume a computation for IPOG
 
   //Support for colors in Windows with the ANSICON executable.
   //https://stackoverflow.com/questions/16755142/how-to-make-win32-console-recognize-ansi-vt100-escape-sequences
@@ -39,9 +41,11 @@ object TSPARK {
     var t = opt[Int](name = "t", description = "Generate and join additional clauses using interaction strength t", default = 0)
   }
 
-  //Nouvel objet pour Distributed IPOG avec Roaring
+  /**
+    * Distributed IPOG Coloring avec Roaring Bitmaps
+    */
   object D_ipog_coloring_roaring extends Command(name = "dicr",
-    description = "Distributed IPOG-Coloring using compressed graphs") with CommonOpt {
+    description = "Distributed IPOG-Coloring using a compressed graph") with CommonOpt {
 
     var t = arg[Int](name = "t",
       description = "interaction strength")
@@ -52,13 +56,14 @@ object TSPARK {
     var v = arg[Int](name = "v",
       description = "domain size")
 
-    var hstep = opt[Int](name = "hstep", description = "Number of parameters of tests to extend in parallel", default = -1)
-    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
-    var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
+    var hstep = opt[Int](name = "hstep", description = "Speed of horizontal growth", default = -1)
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Default is 20k", default = 20000)
-    //var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run (when using OC)", default = 0)
 
-    var seeding = opt[String](name = "seeding", description = "Seeding at param,file", default = "")
+    var algorithm = opt[String](name = "algorithm", description = "The Graph Coloring algorithm (OC or KP)", default = "OC")
+    var seeding = opt[String](name = "seeding", description = "Resume the algorithm at param,file", default = "")
+    var save = opt[Boolean](name = "save", abbrev="s", description = "Save the test suite after every parameter")
+    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
+    var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps")
 
   }
 
@@ -75,6 +80,7 @@ object TSPARK {
     var v = arg[Int](name = "v",
       description = "domain size of a parameter")
 
+    var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Default is 20k", default = 20000)
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
     var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
@@ -92,8 +98,6 @@ object TSPARK {
   object edn extends Command(name = "edn", description = "hypergraph covering from a file (edn format)") {
     var filename = arg[String](name = "filename", description = "file name of the .dot file")
   }
-
-
 
  //Single threaded coloring with Order Coloring
   object Color extends Command(name = "color",
@@ -113,6 +117,9 @@ object TSPARK {
   }
 
 
+  /**
+    * CLassic Distributed IPOG Coloring. Parallel graph colorings, 1 processor per graph coloring.
+    */
   object D_ipog_coloring extends Command(name = "dic",
     description = "Distributed Ipog-Coloring") with CommonOpt {
 
@@ -127,8 +134,10 @@ object TSPARK {
 
     var hstep = opt[Int](name = "hstep", description = "Number of parameters of tests to extend in parallel", default = -1)
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
-    var st = opt[Boolean](name = "st", abbrev = "s", description = "use single threaded coloring")
-    var colorings = opt[Int](name = "colorings", description = "Number of parallel graph colorings to run", default = 6)
+    var st = opt[Boolean](name = "singlethreaded", abbrev = "st", description = "use single threaded coloring")
+    var colorings = opt[Int](name = "colorings", description = "Number of graph colorings to run", default = 6) //Default should be 1 graph coloring per partition
+    var save = opt[Boolean](name = "save", abbrev = "v", description = "Save the test suite to a file")
+    var seeding = opt[String](name = "seeding", description = "Seeding at param,file", default = "")
   }
 
   object D_ipog_hypergraph extends Command(name = "dih",
@@ -308,30 +317,34 @@ object TSPARK {
 
       }
 
-      //Distributed IPOG Coloring roaring bitmaps
+      /** Distributed IPOG Coloring using Roaring Bitmaps */
       case Some(D_ipog_coloring_roaring) => {
+        import cmdline.MainConsole.readSeeding
+        import cmdline.resume_info
 
         val n = D_ipog_coloring_roaring.n
         val t = D_ipog_coloring_roaring.t
         val v = D_ipog_coloring_roaring.v
 
-        var hstep = D_ipog_coloring_roaring.hstep
-        var verify = D_ipog_coloring_roaring.verify
-        //val colorings = D_ipog_coloring_roaring.colorings
-        val colorings = 0
-        var chunkSize = D_ipog_coloring_roaring.chunkSize
-        var algorithm = D_ipog_coloring_roaring.algorithm
+        val hstep = D_ipog_coloring_roaring.hstep
+        val verify = D_ipog_coloring_roaring.verify
+        val chunkSize = D_ipog_coloring_roaring.chunkSize
+        val algorithm = D_ipog_coloring_roaring.algorithm
 
+        save = D_ipog_coloring_roaring.save
+        compressRuns = D_ipog_coloring_roaring.compressRuns
 
-        import cmdline.MainConsole.readSeeding
-        import cmdline.resume_info
-        var seeding = D_ipog_coloring_roaring.seeding
+        if (save == true) println("Save parameter: True. Saving the test suites to files")
+        if (compressRuns == true) println("Compress runs activated. Better compression for dense graphs")
 
-        val resume = if (seeding != "") {
+        val seeding = D_ipog_coloring_roaring.seeding
+
+        //We set the global variable here
+        resume = if (seeding != "") {
           Some(readSeeding(seeding))
         } else None
 
-        val tests = distributed_ipog_coloring_roaring(n, t, v, sc, colorings, hstep, resume, chunkSize, algorithm)
+        val tests = distributed_ipog_coloring_roaring(n, t, v, sc, hstep, chunkSize, algorithm)
 
         //Verify the test suite (optional)
         if (verify == true) {
@@ -351,7 +364,13 @@ object TSPARK {
 
         var hstep = D_ipog_coloring.hstep
         var verify = D_ipog_coloring.verify
-        val colorings = D_ipog_coloring.colorings
+        var colorings = D_ipog_coloring.colorings
+
+        save = D_ipog_coloring.save //Do we save the generated test suites? This is useful for resuming
+
+
+        println("Setting number of colorings to the default parallelism number")
+        colorings = sc.defaultParallelism
 
         val tests = distributed_ipog_coloring(n, t, v, sc)
 
@@ -400,6 +419,8 @@ object TSPARK {
         val chunkSize = ColoringRoaring.chunkSize
         val verify = ColoringRoaring.verify
         val algorithm = ColoringRoaring.algorithm //Default is OC, Order Coloring
+
+        compressRuns = ColoringRoaring.compressRuns
 
         val tests = distributed_graphcoloring_roaring(n, t, v, sc, chunkSize, algorithm)
 

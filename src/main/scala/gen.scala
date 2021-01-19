@@ -22,7 +22,7 @@ import utils._
 
 import roaringcoloring.roaring_coloring.coloring_roaring
 
-
+import cmdlineparser.TSPARK.save
 
 //If lastPV is set to true, this means that this is the last step
 case class _step(stepNo: Int, startingpv: Array[Char], nextpv: Array[Char],
@@ -42,7 +42,7 @@ case class _step(stepNo: Int, startingpv: Array[Char], nextpv: Array[Char],
 object gen extends Serializable {
   import utils._
   //Helpful global vars
-  var save = false
+  //var save = false
   var debug = false
   var writeToFile = true //Write the results to a file
   var filename = "results.txt"
@@ -459,6 +459,7 @@ object gen extends Serializable {
 
   /**
     * Version finale. Mise au propre pas mal
+    * Fonction utilisée par Distributed Graph Coloring, et Distributed IPOG
     *
     * @param tests
     * @param combos
@@ -527,20 +528,17 @@ object gen extends Serializable {
             }
           })
         })
-        Iterator(hashmappp)
+
+        hashmappp.iterator
       })
 
       //Unpersist the broadcast variable
       someTests_bcast.unpersist(false)
 
-      //TODO: Optimize this part
-
       //Final aggregation of the counts using reduceByKey
-      var res = s1.flatMap(hash => hash.toSeq).reduceByKey((a, b) => a + b)
+      var res = s1.reduceByKey((a, b) => a + b)
 
-      //This part should be done on a local machine for speed.
-
-      //Find the best version of the tests
+      //Find the best version of the tests using the cluster
       val res2 = res.map(e => Tuple2(e._1.test, (e._1.version, e._2))).reduceByKey((a, b) => {
         if (a._2 > b._2) a else b
       }).collect()
@@ -715,7 +713,10 @@ object gen extends Serializable {
   def distributed_graphcoloring_roaring(n: Int, t: Int, v: Int, sc: SparkContext,
                                         chunkSize: Int = 4000, algorithm: String = "OrderColoring"): Array[Array[Char]] = {
     val expected = utils.numberTWAYCombos(n, t, v)
+    import cmdlineparser.TSPARK.compressRuns
+
     println("Distributed Graph Coloring with Roaring bitmaps")
+    println(s"Run compression for Roaring Bitmap = $compressRuns")
     println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
     println(s"Expected number of combinations is : $expected ")
@@ -724,12 +725,12 @@ object gen extends Serializable {
     import java.io._
     val pw = new PrintWriter(new FileOutputStream(filename, true))
 
-    var t1 = System.nanoTime()
+    val t1 = System.nanoTime()
 
     val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, algorithm)
 
-    var t2 = System.nanoTime()
-    var time_elapsed = (t2 - t1).toDouble / 1000000000
+    val t2 = System.nanoTime()
+    val time_elapsed = (t2 - t1).toDouble / 1000000000
 
     pw.append(s"$t;$n;$v;GRAPHCOLORING_ROARING;$time_elapsed;${tests.size}\n")
     println(s"$t;$n;$v;GRAPHCOLORING_ROARING;$time_elapsed;${tests.size}\n")
@@ -1007,7 +1008,9 @@ object test5 extends App {
   var t = 2
   var v = 2
 
-  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 100000, "KP") //4000 pour 100 2 2
+  import cmdlineparser.TSPARK.compressRuns
+  compressRuns = false
+  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
 
   //val tests = distributed_graphcoloring(n,t,v,sc, 4000, "OC")
 

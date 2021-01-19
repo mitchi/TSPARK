@@ -141,7 +141,6 @@ object roaring_coloring extends Serializable {
       println("Printing combos before shuffle")
       combos.collect().foreach(utils.print_helper(_))
     }
-
     //Shuffle the combos before. Doing this ensures a different result every run.
     var mycombos = combos.mapPartitions(it => {
 
@@ -384,10 +383,24 @@ object roaring_coloring extends Serializable {
       a
     })
 
-    val r4 = r3.mapValues(e => {
-      e.runOptimize()
-      e
-    })
+    //Here we handle whether or not we use run compression or not
+    import cmdlineparser.TSPARK.compressRuns
+
+    val r4 = compressRuns match {
+      case true =>
+        println("Appyling the algorithm to compress into runs when its suitable")
+        r3.mapValues(e => {
+        e.runOptimize()
+        e
+      })
+      case false =>
+        r3
+    }
+
+//    val r4 = r3.mapValues(e => {
+//      e.runOptimize()
+//      e
+//    })
 
     //Destroy the DAG here
     // r4.localCheckpoint()

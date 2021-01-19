@@ -9,6 +9,10 @@ object MainConsole {
 
   import central.gen._
   import utils.utils._
+
+  import cmdlineparser.TSPARK.save
+
+
   val SPARKVERSION = "2.4.4"
   val VERSION = "1.0.0"
   val HEADER = s"TSPARK by 2019 Edmond LA CHANCE. Developped using Apache Spark $SPARKVERSION"
