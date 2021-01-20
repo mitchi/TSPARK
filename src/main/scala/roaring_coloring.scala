@@ -22,9 +22,227 @@ object roaring_coloring extends Serializable {
 
   var debug = false
 
+
+  /**
+    * Create a n * v special data structure for fast graph construction
+    * On pourrait utiliser des roaring bitmaps a la place du ArrayBuffer[Int]
+    * Je ne sais pas si l'économie d'espace en vaut la peine franchement
+    * @param chunk
+    * @param n
+    * @param v
+    */
+  def fastGraph1(chunk: Array[Array[Char]], n : Int, v : Int) = {
+    //On pourrait également faire Array[Array[Int]] et faire un indexage plus compliqué
+    var tableau = new Array[Array[ArrayBuffer[Int]]](n)
+
+    for (i <- 0 until n ) {
+      tableau(i) = new Array[ ArrayBuffer[Int]](v)
+      for (v <- 0 until v) {
+        tableau(i)(v) = new ArrayBuffer[Int]()
+      }
+    }
+
+    var indexCombo = 0
+    //On remplit cette structure avec notre chunk
+    for (combo <- chunk) { //pour chaque combo
+      for (i <- 0 until n) { //pour chaque paramètre
+         val vv = combo(i) - '0' //on va chercher la valeur
+        tableau(i)(vv) += indexCombo //on ajoute dans le ArrayBuffer
+      }
+      indexCombo +=1
+    }
+    //On retourne notre travail
+    tableau
+  }
+
+  /**
+    * A partir d'une liste avec les numéros des combos qui possèdent le bon paramètre-valeur,
+    * on crée la liste de ceux qui ne l'ont pas
+    * La liste est triée
+    *
+    * On pourrait faire autre algorithme plus optimisé. Je pense que ça c'est correct. Le code est plus simple
+    *
+    * @param list
+    */
+  def generateOtherList( list : ArrayBuffer[Int], chunkSize: Int, i : Int) =
+  {
+    //On construit une lookup table avec la liste des bons combos
+    val lookuptable = new Array[Byte](chunkSize).map(e => 0)
+
+    for (i <- list) {
+      lookuptable(i) = 1
+    }
+
+    //On génère maintenant la liste finale
+    var output = new ArrayBuffer[Int]()
+
+    for (i <- 0 until chunkSize) {
+      if (lookuptable(i) == 0) output += i
+    }
+
+  output
+  }
+
+
+  //def genadjlist_roaring(i: Long, step: Long, combos: RDD[(Array[Char], Long)],
+  //                       combosToColor: Array[(Array[Char], Long)], sc: SparkContext) = {
+
+  /**
+    * Faster graph construction routine
+    *
+    * For every combo in the RDD, we do the following:
+    * 1. We iterate over all its parameter-values. On trouve la liste des combos qui ont ce paramètre-valeur.
+    * 2. A partir de cette liste, on génère la liste de tout ceux qui n'ont pas le parameter-value
+    * 3. On utilise cette liste pour remplir la table de hachage -> RoaringBitmap.
+    * 4. On fusionne nos listes, on retourne le graph partiel pour le chunk qu'on nous a donné
+    * 5. Il faut gérer les indices aussi avec i et step également. Ne pas oublier.
+    *
+    * WIP
+    *
+    * @param i
+    * @param step
+    * @param combos
+    * @param sc
+    */
+  def fastColoring(i : Long, step: Long, combos: RDD[(Array[Char], Long)], tableau: Array[Array[ArrayBuffer[Int]]] , sc : SparkContext): Unit =
+  {
+
+    //First step is to group every combo with every other combo to do a MapReduce.
+    val bcastdata = sc.broadcast(tableau)
+    val chunkSize = step
+
+//    //Print the number of partitions we are using
+//    val partitions = combos.getNumPartitions
+//    println(s"Currently using $partitions partitions")
+//
+//    //For every partition, we build a hash table of COMBO -> List of neighbors (all neighbors are strictly less than combo)
+//    val r1 = combos.mapPartitions(partition => {
+//      val hashtable = scala.collection.mutable.HashMap.empty[Long, RoaringBitmap]
+//
+//      partition.foreach(elem => {
+//        val thisId = elem._2
+//
+//        // Si le ID du combo est plus haut que ceux des combos choisis, on fait aucun travail.
+//        //println(s" haut if $thisId > $i + $step ")
+//        if (thisId > i + step) {
+//          val bbb = 2 //dummy statement for Scala
+//        }
+//        else {
+//
+//          val someCombos = bcastdata.value
+//
+//          var j = if (thisId >= i)
+//            (thisId - i).toInt //start the counter at 0
+//          else 0
+//          loop
+//
+//          def loop(): Unit = {
+//
+//            //Basic exit condition
+//            if (j == someCombos.size) return
+//
+//            //If id of this general combo is lower than the combo to color, we can work
+//            if (thisId < i + j) {
+//
+//              //Check if lookuptable exists. Create it if it does not
+//              if (!hashtable.contains(i + j)) {
+//                hashtable(i + j) = new RoaringBitmap()
+//              }
+//
+//              val answer = isAdjacent(elem._1, someCombos(j)._1)
+//              if (answer == true)
+//                hashtable(i + j).add(thisId.toInt) //add value to roaring bitmap
+//              // hashtable(i + j)(thisId.toInt) = 1
+//              //else hashtable(i + j)(thisId.toInt) = 0
+//            }
+//
+//            j += 1
+//            loop
+//          }
+//        }
+//      })
+//
+//      //New ArrayBufer with results
+//      // val rr = new ArrayBuffer[(Long, RoaringBitmap)]()
+//      var rr2 = hashtable.toIterator
+//      rr2
+//      //Iterator(hashtable.toArray)
+//      //Return an iterator here
+//    })
+//
+//
+//    // Debug mode. We print the adjacency lists
+//    if (debug == true) {
+//      val d1 = r1.mapPartitionsWithIndex((partition, it) => {
+//
+//        var output = ""
+//        output += "Partition " + partition + "\n"
+//        it.foreach(e => {
+//          output += e._1 + " "
+//          // e._2.foreach(b => output += b)
+//          output += e._2.toString
+//
+//          output += "\n"
+//        })
+//
+//        Iterator(output)
+//      }).collect().foreach(println)
+//    }
+//
+//    val r3 = r1.reduceByKey((a, b) => {
+//      //fuseadjlists(a, b)
+//      a.or(b)
+//      a
+//    })
+//
+//    //Here we handle whether or not we use run compression or not
+//    import cmdlineparser.TSPARK.compressRuns
+//
+//    val r4 = compressRuns match {
+//      case true =>
+//        println("Appyling the algorithm to compress into runs when its suitable")
+//        r3.mapValues(e => {
+//          e.runOptimize()
+//          e
+//        })
+//      case false =>
+//        r3
+//    }
+//
+//    //    val r4 = r3.mapValues(e => {
+//    //      e.runOptimize()
+//    //      e
+//    //    })
+//
+//    //Destroy the DAG here
+//    // r4.localCheckpoint()
+//
+//    if (debug == true) {
+//      println("Fused adjlists")
+//      val d2 = r3.mapPartitionsWithIndex((partition, it) => {
+//        var output = ""
+//        output += "Partition " + partition + "\n"
+//        it.foreach(e => {
+//          output += e._1 + " "
+//          // e._2.foreach(b => output += b)
+//          output += e._2.toString
+//          output += "\n"
+//        })
+//        Iterator(output)
+//      }).collect().foreach(println)
+//    }
+//    r4
+//  }
+//
+//
+
+  }
+
+
   /**
     * Roaring bitmap iterator wrapper
     */
+
 
 
   /**
