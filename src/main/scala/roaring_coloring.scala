@@ -2,7 +2,7 @@ package roaringcoloring
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.roaringbitmap.RoaringBitmap
+import org.roaringbitmap.{RoaringArray, RoaringBitmap}
 import utils.utils
 import progressivecoloring.progressive_coloring.assign_numberClauses
 import progressivecoloring.progressive_coloring.determineStep
@@ -31,7 +31,7 @@ object roaring_coloring extends Serializable {
     * @param n
     * @param v
     */
-  def fastGraph1(chunk: Array[Array[Char]], n : Int, v : Int) = {
+  def createTableau(chunk: Array[Array[Char]], n : Int, v : Int) = {
     //On pourrait également faire Array[Array[Int]] et faire un indexage plus compliqué
     var tableau = new Array[Array[ArrayBuffer[Int]]](n)
 
@@ -64,7 +64,7 @@ object roaring_coloring extends Serializable {
     *
     * @param list
     */
-  def generateOtherList( list : ArrayBuffer[Int], chunkSize: Int, i : Int) =
+  def generateOtherList( list : ArrayBuffer[Int], chunkSize: Int) =
   {
     //On construit une lookup table avec la liste des bons combos
     val lookuptable = new Array[Byte](chunkSize).map(e => 0)
@@ -85,7 +85,40 @@ object roaring_coloring extends Serializable {
 
 
   //def genadjlist_roaring(i: Long, step: Long, combos: RDD[(Array[Char], Long)],
-  //                       combosToColor: Array[(Array[Char], Long)], sc: SparkContext) = {
+  //combosToColor: Array[(Array[Char], Long)], sc: SparkContext) = {
+
+  /**
+    * On passe sur tous les paramètres du combo, et a chaque fois on va prendre la liste des combos du chunk qui possèdent ce paramètre.
+    * À l'aide ça, on peut construire la liste des combos qui n'ont pas ce paramètre
+    *
+    * On peut faire plus optimisé avec plus de travail!
+    * Est-ce que Roaring Bitmap est utile ici?
+    * @param combo
+    * @param tableau
+    */
+  def comboToValidList(combo: Array[Char], chunkSize: Long,  tableau: Array[Array[ArrayBuffer[Int]]]) = {
+
+    var i = 0 //quel paramètre?
+
+    val badguys = Set[Int]()
+
+    //Pour tous les paramètres valeur du combo, on ajoute dans la liste des bad guys
+    for (it <- combo) {
+      val paramVal = it - '0'
+      //On va chercher la liste des combos qui ont ce paramètre-valeur
+      val list = tableau(i)(paramVal)
+      val list2 = generateOtherList(list, chunkSize )
+      badguys += list2
+
+      i+=1
+    }
+
+    //On retourne cette liste, qui contient au maximum chunkSize éléments
+    //Il faut ajuster la valeur des éléments de cette liste pour les id du chunk
+    badguys
+
+  }
+
 
   /**
     * Faster graph construction routine
@@ -104,16 +137,32 @@ object roaring_coloring extends Serializable {
     * @param combos
     * @param sc
     */
-  def fastColoring(i : Long, step: Long, combos: RDD[(Array[Char], Long)], tableau: Array[Array[ArrayBuffer[Int]]] , sc : SparkContext): Unit =
+  def fastColoring(i : Long, step: Long, combos: RDD[(Array[Char], Long)], tableau: Array[Array[ArrayBuffer[Int]]] , sc : SparkContext) =
   {
 
     //First step is to group every combo with every other combo to do a MapReduce.
     val bcastdata = sc.broadcast(tableau)
     val chunkSize = step
 
-//    //Print the number of partitions we are using
-//    val partitions = combos.getNumPartitions
-//    println(s"Currently using $partitions partitions")
+    //Print the number of partitions we are using
+    val partitions = combos.getNumPartitions
+    println(s"Currently using $partitions partitions")
+
+    val r1 = combos.map( combo => {
+        //Tout d'abord, on vérifie si on traite cet élément. A moins qu'on aie fait un gros filtre avant!
+      //todo!
+        //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
+        val badguys = comboToValidList(combo._1, step, tableau)
+
+        //On fait une Roaring Bitmap avec tout ça
+        val roaring = new RoaringBitmap()
+        badguys.map( e => roaring.add(e + i.toInt)) //on ajoute l'index ici pour que ça soit correct
+
+         (combo._2, roaring)
+      })
+
+    r1
+  }
 //
 //    //For every partition, we build a hash table of COMBO -> List of neighbors (all neighbors are strictly less than combo)
 //    val r1 = combos.mapPartitions(partition => {
@@ -236,7 +285,7 @@ object roaring_coloring extends Serializable {
 //
 //
 
-  }
+
 
 
   /**
@@ -445,7 +494,9 @@ object roaring_coloring extends Serializable {
       // val r1 = genadjlist_roaring(i, step, combosNumbered, someCombos, sc).cache()
       val filteredCombos = filterBig(combosNumbered, i, step)
       //filteredCombos.localCheckpoint()
+      
       val r1 = genadjlist_roaring(i, step, filteredCombos, someCombos, sc).cache()
+
 
       //Print the types of the roaring bitmaps
       if (debug == true) {
