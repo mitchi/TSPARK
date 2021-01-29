@@ -13,6 +13,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import scala.collection.mutable.ArrayBuffer
 import hypergraph_cover.Algorithm2._
 import progressivecoloring.progressive_coloring
+import roaringcoloring.roaring_coloring.fastcoloring_roaring
 
 import scala.io.Source
 //Import all enumerator functions
@@ -727,7 +728,8 @@ object gen extends Serializable {
 
     val t1 = System.nanoTime()
 
-    val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, algorithm)
+    //val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, algorithm)
+    val tests = fastcoloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, n, v, algorithm)
 
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
@@ -999,7 +1001,7 @@ object test5 extends App {
   import gen.verifyTestSuite
   import ipog.d_ipog.distributed_ipog_coloring
 
-  val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
+  val conf = new SparkConf().setMaster("local[1]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
   //.set("spark.checkpoint.compress", "true")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
