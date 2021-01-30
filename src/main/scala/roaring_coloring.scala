@@ -149,12 +149,14 @@ object roaring_coloring extends Serializable {
     //Before everything, we can color the first vertex with the color 1
     colors(0) = 1
     var maxColor = 1
-    var i = 0 //the number of vertices we have colored
+    var i = 1 //the number of vertices we have colored
 
     //var step = 0 //calculated value
     var chunkNo = 0
 
     var tableau = initTableau(n,v)
+    var etoiles: Array[ArrayBuffer[Int]] = initTableauEtoiles(n)
+
 
     loop
 
@@ -179,6 +181,8 @@ object roaring_coloring extends Serializable {
       val filteredCombos = filterBig(combosNumbered, i, sizeOfChunk)
 
       tableau = addToTableau(tableau, someCombos, n, v)
+      etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
+
 
       println("On imprime le tableau apres remplissage")
       for (i <- 0 until n){ //pour tous les paramètres
@@ -188,7 +192,7 @@ object roaring_coloring extends Serializable {
       }
 
 
-      val r1 = generatelist_fastcoloring(i, sizeOfChunk, filteredCombos, tableau, sc)
+      val r1 = generatelist_fastcoloring(i, sizeOfChunk, filteredCombos, tableau, etoiles, sc)
 
       //Use KP when the graph is sparse (not dense)
       val r2 =
@@ -226,10 +230,6 @@ object roaring_coloring extends Serializable {
   }
 
 
-
-
-
-
   /**
     * A partir d'une liste avec les numéros des combos qui possèdent le bon paramètre-valeur,
     * on crée la liste de ceux qui ne l'ont pas
@@ -242,26 +242,40 @@ object roaring_coloring extends Serializable {
     * @param list
     */
   def generateOtherList( id: Long,
-                         list : ArrayBuffer[Int]) =
+                         list : ArrayBuffer[Int],
+                         etoiles: ArrayBuffer[Int]) =
   {
     //On construit une lookup table avec la liste des bons combos
     //La liste est exactement de la taille du id
     var lookuptable = new Array[Byte](id.toInt)
     lookuptable = lookuptable.map( e => 0.toByte)
 
+    //On a notre liste de combos qui sont possiblement valides sur ce parametre seulement
     for (i <- list) {
         if (i < id)
         lookuptable(i) = 1
     }
 
     //On génère maintenant la liste finale
-    var adjlist =  mutable.Set[Int]()
+    //Important: On tient compte des combos qui ont une étoile a ce paramètre, pour ne pas les disqualifier
+
+    var adjlist = mutable.Set[Int]()
     var index = 0
     for (i <- 0 until id.toInt) {
       if (lookuptable(i) == 0) {
        adjlist += i
       }
     }
+
+    //On fait la différence avec le set des étoiles
+    etoiles.foreach( e => {
+      adjlist.remove(e)
+    })
+
+    println("List of combos with valid params " + list.toString)
+    println("List of combos with stars " + etoiles.toString)
+    println("the certified invalid combos "+ adjlist.toString)
+
     adjlist
   }
 
@@ -280,18 +294,27 @@ object roaring_coloring extends Serializable {
     */
   def comboToADJ(id: Long,
                  combo: Array[Char],
-                 tableau: Array[Array[ArrayBuffer[Int]]]) = {
+                 tableau: Array[Array[ArrayBuffer[Int]]],
+                 etoiles: Array[ArrayBuffer[Int]]) = {
 
     var i = 0 //quel paramètre?
     var possiblyValidGuys = scala.collection.mutable.Set[Int]()
     var certifiedInvalidGuys = scala.collection.mutable.Set[Int]()
 
+    println("Combo is " + utils.print_helper(combo) + s" id is $id")
+
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
+
+      println(s"i=$i, value is $it")
+      if (it == '*') println("*, we skip")
+
       if (it != '*') {
         val paramVal = it - '0'
         val list = tableau(i)(paramVal)
-        val invalids = generateOtherList(id, list)
+        val listEtoiles = etoiles(i) //on va prendre toutes les etoiles pour ce parametre
+
+        val invalids = generateOtherList(id, list, listEtoiles)
 
         //On ajoute juste dans la liste si l'element est plus petit
         for (element <- list) {
@@ -310,10 +333,11 @@ object roaring_coloring extends Serializable {
     //val list2 = generateOtherList(id, list, chunkSize.toInt )
     //badguys  ++= list2
 
-    println(s"\n\nid: $id")
-    println(s"combo: "+ utils.print_helper(combo))
+    //println(s"\n\nid: $id")
+   // println(s"combo: "+ utils.print_helper(combo))
     //println(s"list of all possibly valid guys" + possiblyValidGuys.toString)
     println(s"list of all certified invalid guys" + certifiedInvalidGuys.toString)
+    println("\n\n")
 
     //On retourne cette liste, qui contient au maximum chunkSize éléments
     //Il faut ajuster la valeur des éléments de cette liste pour les id du chunk
@@ -341,11 +365,16 @@ object roaring_coloring extends Serializable {
     * @param combos
     * @param sc
     */
-  def generatelist_fastcoloring(i : Long, step: Long, combos: RDD[(Array[Char], Long)], tableau: Array[Array[ArrayBuffer[Int]]], sc : SparkContext) =
+  def generatelist_fastcoloring(i : Long, step: Long,
+                                combos: RDD[(Array[Char], Long)],
+                                tableau: Array[Array[ArrayBuffer[Int]]],
+                                etoiles: Array[ArrayBuffer[Int]],
+                                sc : SparkContext) =
   {
 
     //First step is to group every combo with every other combo to do a MapReduce.
-    //val bcastdata = sc.broadcast(tableau)
+    //val bcasttableau = sc.broadcast(tableau)
+    //val bcastetoiles = sc.broadcast(etoiles)
 
     //Print the number of partitions we are using
     val partitions = combos.getNumPartitions
@@ -356,8 +385,7 @@ object roaring_coloring extends Serializable {
       val id = combo._2
       if (id != 0) {
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
-        val adjlist = comboToADJ(id, combo._1, tableau)
-
+        val adjlist = comboToADJ(id, combo._1, tableau, etoiles)
         //On fait une Roaring Bitmap avec tout ça
         val roaring = new RoaringBitmap()
         adjlist.map( e => roaring.add(e)) //on ajoute l'index ici pour que ça soit correct
