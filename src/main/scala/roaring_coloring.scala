@@ -178,7 +178,7 @@ object roaring_coloring extends Serializable {
       val sizeOfChunk = someCombos.size
       println(s"Currently working with a chunk of the graph with $sizeOfChunk vertices.")
 
-      val filteredCombos = filterBig(combosNumbered, i, sizeOfChunk)
+      //val filteredCombos = filterBig(combosNumbered, i, sizeOfChunk)
 
       tableau = addToTableau(tableau, someCombos, n, v)
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
@@ -191,8 +191,11 @@ object roaring_coloring extends Serializable {
         }
       }
 
+      val r1 = generatelist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
 
-      val r1 = generatelist_fastcoloring(i, sizeOfChunk, filteredCombos, tableau, etoiles, sc)
+      //On debug ce qu'on a
+      println("Debug de l'adj list")
+      r1.collect().foreach(  e => println(s"${e._1} ${e._2.toString}"))
 
       //Use KP when the graph is sparse (not dense)
       val r2 =
@@ -394,8 +397,7 @@ object roaring_coloring extends Serializable {
       else None
       })
 
-    //On debug ce qu'on a
-    r1.collect().foreach(  e => println(s"${e._1} ${e._2.toString}"))
+
 
     r1
   }

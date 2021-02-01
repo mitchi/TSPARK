@@ -5,6 +5,7 @@ package central
 import central.gen.{distributed_graphcoloring, simple_hypergraphcover}
 import central.test3.sc
 import enumerator.distributed_enumerator
+import fastcoloring.fastColoring.fastcoloring
 import ordercoloring.OrderColoring.orderColoring
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
@@ -729,7 +730,7 @@ object gen extends Serializable {
     val t1 = System.nanoTime()
 
     //val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, algorithm)
-    val tests = fastcoloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, n, v, algorithm)
+    val tests = fastcoloring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, n, v, algorithm)
 
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
@@ -1012,7 +1013,7 @@ object test5 extends App {
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
+  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 4, "OC") //4000 pour 100 2 2
 
   //val tests = distributed_graphcoloring(n,t,v,sc, 4000, "OC")
 
