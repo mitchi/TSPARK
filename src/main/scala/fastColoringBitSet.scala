@@ -1,4 +1,4 @@
-package fastColoring
+package fastColoringBitSet
 
 import central.gen.filename
 import cmdlineparser.TSPARK.save
@@ -12,14 +12,11 @@ import progressivecoloring.progressive_coloring.assign_numberClauses
 import scala.util.Random
 import ordercoloring.OrderColoring.coloringToTests
 import org.roaringbitmap.RoaringBitmap
-import org.roaringbitmap.buffer.MutableRoaringBitmap
-import org.roaringbitmap.buffer.ImmutableRoaringBitmap
-import roaringkp.roaringkp.color
 
 import java.nio.ByteBuffer
-
-
-object fastColoring extends Serializable {
+import scala.collection.mutable
+import scala.collection.mutable.BitSet
+object fastColoringBitSet extends Serializable {
 
   var debug = false
 
@@ -27,10 +24,10 @@ object fastColoring extends Serializable {
     *
     */
   def fastcoloring(combos: RDD[Array[Char]],
-                           sc: SparkContext,
-                           chunkSize: Int,
-                           n: Int, v : Int,
-                           algorithm: String = "OC") = {
+                   sc: SparkContext,
+                   chunkSize: Int,
+                   n: Int, v : Int,
+                   algorithm: String = "OC") = {
 
     val count = combos.count()
     //Toutes nos couleurs sont la
@@ -123,29 +120,8 @@ object fastColoring extends Serializable {
       //r1.collect().foreach(  e => println(s"${e._1} ${e._2.toString}"))
 
       //Use KP when the graph is sparse (not dense)
-      val r2 =
-        if (algorithm == "KP") {
-
-          //Deserialize le gros machin a la main haha
-          val r1after = r1.map( e => {
-            val ret = new RoaringBitmap()
-            ret.deserialize(ByteBuffer.wrap(e._2))
-            (e._1, ret)
-          })
-
-          progressiveKP(colors, r1after, r1.count().toInt, maxColor, sc)
-        }
-        else { //algorithm = "OC". The single threaded needs a sorted matrix of adjlists
-
-          //Deserialize le gros machin a la main haha
-          val arr = r1.collect().sortBy(_._1).map( e => {
-            val ret = new RoaringBitmap()
-            ret.deserialize(ByteBuffer.wrap(e._2))
-            (e._1, ret)
-          })
-
-          ordercoloring(colors, arr, i, maxColor)
-        }
+      val arr = r1.collect().sortBy(_._1)
+      val r2 = ordercoloring(colors, arr, i, maxColor)
 
       if (debug == true) {
         println("On imprime le tableau des couleurs après coloriage du chunk par OrderColoring")
@@ -194,35 +170,29 @@ object fastColoring extends Serializable {
     * @return
     */
   def generateOtherList( id: Long,
-                         list : MutableRoaringBitmap,
-                         etoiles: MutableRoaringBitmap) = {
+                         list : BitSet,
+                         etoiles: BitSet) = {
     //On construit une lookup table avec la liste des bons combos
     //La liste est exactement de la taille du id
-    var lookuptable = new Array[Byte](id.toInt)
-    lookuptable = lookuptable.map( e => 0.toByte)
+
+    var lookuptable = BitSet(id.toInt)
+
+
+//    var lookuptable = new Array[Byte](id.toInt)
+//    lookuptable = lookuptable.map( e => 0.toByte)
 
     //We take the data from the tableau, and we add it to the possiblyValidGuys, if the comboId is smaller than our id of course!
-    val buffer = new Array[Int](256)
-    val ite = list.getBatchIterator
-    while (ite.hasNext) {
-      val batch = ite.nextBatch(buffer)
-      for (i <- 0 until batch) {
-        if (buffer(i) < id) lookuptable( buffer(i) ) = 1
-      }
-    }
+//   for (elem <- list) {
+//     if (elem < id) lookuptable(elem) = 1
+//   }
 
-  //On ajoute les etoiles également
-  val buffer2 = new Array[Int](256)
-    val ite2 = etoiles.getBatchIterator
-    while (ite2.hasNext) {
-      val batch = ite2.nextBatch(buffer2)
-      for (i <- 0 until batch) {
-        if (buffer2(i) < id) lookuptable( buffer2(i) ) = 1
-      }
-    }
+    //On ajoute les etoiles également
+//    for (elem <- etoiles) {
+//      if (elem < id) lookuptable(elem) = 1
+//    }
 
     //On inverse la lsite maintenant
-    var adjlist = new MutableRoaringBitmap()
+    var adjlist = BitSet()
     var index = 0
     for (i <- 0 until id.toInt) {
       if (lookuptable(i) == 0) {
@@ -249,11 +219,11 @@ object fastColoring extends Serializable {
     */
   def comboToADJ(id: Long,
                  combo: Array[Char],
-                 tableau: Array[Array[MutableRoaringBitmap]],
-                 etoiles: Array[MutableRoaringBitmap]) = {
+                 tableau: Array[Array[BitSet]],
+                 etoiles: Array[BitSet]) = {
 
     var i = 0 //quel paramètre?
-    var certifiedInvalidGuys = new MutableRoaringBitmap()
+    var certifiedInvalidGuys = BitSet()
 
     //println("Combo is " + utils.print_helper(combo) + s" id is $id")
 
@@ -261,7 +231,7 @@ object fastColoring extends Serializable {
     for (it <- combo) {
 
       //println(s"i=$i, value is $it")
-     // if (it == '*') println("*, we skip")
+      // if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -270,7 +240,8 @@ object fastColoring extends Serializable {
         val invalids = generateOtherList(id, list, listEtoiles)
 
         //On ajoute dans la grosse liste des invalides
-        certifiedInvalidGuys.or(invalids)
+        //certifiedInvalidGuys.or(invalids)
+        certifiedInvalidGuys.|=(invalids)
 
       }
       //On va chercher la liste des combos qui ont ce paramètre-valeur
@@ -301,10 +272,10 @@ object fastColoring extends Serializable {
     * @return
     */
   def generateadjlist_fastcoloring(i : Long, step: Long,
-                                combos: RDD[(Array[Char], Long)],
-                                tableau: Array[Array[MutableRoaringBitmap]],
-                                etoiles: Array[MutableRoaringBitmap],
-                                sc : SparkContext) =
+                                   combos: RDD[(Array[Char], Long)],
+                                   tableau: Array[Array[BitSet]],
+                                   etoiles: Array[BitSet],
+                                   sc : SparkContext) =
   {
 
     //Print the number of partitions we are using
@@ -313,25 +284,17 @@ object fastColoring extends Serializable {
     println(s"Run compression : $compressRuns")
     println(s"Currently using $partitions partitions")
 
-    println("Broadcasting tableau and etoiles...")
-    val etoilesdata = sc.broadcast(etoiles)
-    val tableaudata = sc.broadcast(tableau)
-
+    val tableau_bcast = sc.broadcast(tableau)
+    val etoiles_bcast = sc.broadcast(etoiles)
 
     val r1 = combos.flatMap( combo => {
+
       //le id du combat. On n'a pas besoin de mettre des sommets plus gros que lui dans sa liste d'adjacence
       val id = combo._2
       if (id != 0 && id < i+step && id >=i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
-        val adjlist = comboToADJ(id, combo._1, tableaudata.value, etoilesdata.value)
-
-        if (compressRuns == true) adjlist.runOptimize()
-        //Application de la sérialisation
-
-        val arr = new Array[Byte](adjlist.serializedSizeInBytes)
-        adjlist.serialize(ByteBuffer.wrap(arr))
-
-        Some(combo._2, arr)
+        val adjlist = comboToADJ(id, combo._1, tableau_bcast.value, etoiles_bcast.value)
+        Some(combo._2, adjlist)
       }
       else {
         //println("Not calculing adjlist for first combo")
@@ -339,11 +302,12 @@ object fastColoring extends Serializable {
       }
     })
 
-    tableaudata.unpersist(false)
-    etoilesdata.unpersist(false)
+    tableau_bcast.unpersist(false)
+    etoiles_bcast.unpersist(false)
 
     r1
   }
+
 
   /**
     * On filtre les combos du RDD, comme ça on travaille pas avec les combos qui sont pas dans le chunk
@@ -370,13 +334,13 @@ object fastColoring extends Serializable {
     *  */
   def initTableau(n: Int, v : Int) =
   {
-    var tableau = new Array[Array[MutableRoaringBitmap]](n)
+    var tableau = new Array[Array[BitSet]](n)
 
     //On met très exactement n paramètres, chacun avec v valeurs. On ne gère pas les *
     for (i <- 0 until n ) {
-      tableau(i) = new Array[MutableRoaringBitmap](v)
+      tableau(i) = new Array[BitSet](v)
       for (v <- 0 until v) {
-        tableau(i)(v) = new MutableRoaringBitmap()
+        tableau(i)(v) = BitSet()
       }
     }
     tableau
@@ -388,17 +352,17 @@ object fastColoring extends Serializable {
     */
   def initTableauEtoiles(n: Int) =
   {
-    var tableauEtoiles = new Array[MutableRoaringBitmap](n)
+    var tableauEtoiles = new Array[BitSet](n)
 
     for (i <- 0 until n) {
-      tableauEtoiles(i) = new MutableRoaringBitmap()
+      tableauEtoiles(i) = BitSet()
     }
 
     tableauEtoiles
   }
 
 
-  def addTableauEtoiles(etoiles: Array[MutableRoaringBitmap],
+  def addTableauEtoiles(etoiles: Array[BitSet],
                         chunk: Array[(Array[Char], Long)], n : Int, v : Int ) = {
 
     //On remplit cette structure avec notre chunk
@@ -421,7 +385,7 @@ object fastColoring extends Serializable {
     * @param n
     * @param v
     */
-  def addToTableau(tableau: Array[Array[MutableRoaringBitmap]],
+  def addToTableau(tableau: Array[Array[BitSet]],
                    chunk: Array[(Array[Char], Long)], n : Int, v : Int) = {
     //On pourrait également faire Array[Array[Int]] et faire un indexage plus compliqué
 
@@ -457,7 +421,7 @@ object fastColoring extends Serializable {
     *
     * @return
     */
-  def ordercoloring(colors: Array[Int], adjMatrix: Array[(Long, RoaringBitmap)], i: Int,
+  def ordercoloring(colors: Array[Int], adjMatrix: Array[(Long, BitSet)], i: Int,
                     maxColor: Int) = {
 
     //    import scala.io.StdIn.readLine
@@ -480,15 +444,12 @@ object fastColoring extends Serializable {
       val neighborcolors = new Array[Int](currentMaxColor + 2)
 
       //Batch iteration through the neighbors of this guy
-      val buffer = new Array[Int](256)
-      val it = adjMatrix(j)._2.getBatchIterator
-      while (it.hasNext) {
-        val batch = it.nextBatch(buffer)
-        for (i <- 0 until batch) {
-          val neighbor = buffer(i)
-          val neighborColor = colors(neighbor)
-          neighborcolors(neighborColor) = 1
-        }
+      val bitset = adjMatrix(j)._2
+
+      for (elem <- bitset) {
+        val neighbor = elem
+        val neighborColor = colors(neighbor)
+        neighborcolors(neighborColor) = 1
       }
 
       val foundColor = color(neighborcolors)
@@ -532,12 +493,12 @@ object fastColoring extends Serializable {
     * @param sc
     * @return
     */
-  def distributed_fastcoloring(n: Int, t: Int, v: Int, sc: SparkContext,
-                                        chunkSize: Int = 4000, algorithm: String = "OC"): Array[Array[Char]] = {
+  def distributed_fastcoloring_bitset(n: Int, t: Int, v: Int, sc: SparkContext,
+                               chunkSize: Int = 4000, algorithm: String = "OC"): Array[Array[Char]] = {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
-    println("Distributed Graph Coloring with FastColoring algorithm for graph construction")
+    println("Distributed Graph Coloring with FastColoring algorithm, BitSets for graph construction")
     println(s"Run compression for Roaring Bitmap = $compressRuns")
     println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
@@ -554,8 +515,8 @@ object fastColoring extends Serializable {
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
 
-    pw.append(s"$t;$n;$v;FASTCOLORING;$time_elapsed;${tests.size}\n")
-    println(s"$t;$n;$v;FASTCOLORING;$time_elapsed;${tests.size}\n")
+    pw.append(s"$t;$n;$v;FASTCOLORING_BITSET;$time_elapsed;${tests.size}\n")
+    println(s"$t;$n;$v;FASTCOLORING_BITSET;$time_elapsed;${tests.size}\n")
     pw.flush()
 
     //If the option to save to a text file is activated
@@ -570,119 +531,8 @@ object fastColoring extends Serializable {
   }
 
 
-  /**
-    * We will modify the colors array.
-    * This function returns when the K&P algorithm has colored all new vertices.
-    *
-    * The adjmatrix can be a RDD or an Array.
-    * Ideally, we are using an adjmatrix that spans the whole cluster. This is a more effective way to use
-    * all the RAM of the cluster.
-    *
-    * We can remove vertices when they are colored.
-    *
-    * @return
-    */
-  def progressiveKP(colors: Array[Int], adjMatrix: RDD[(Long, RoaringBitmap)], remaining: Int,
-                    maxColor: Int, sc: SparkContext) = {
 
 
-    var iterationCounter = 1
-    var currentMaxColor = maxColor
-    var remainingToBeColored = remaining //c'est ici le problème
-    var rdd = adjMatrix
-
-    loop
-
-    def loop(): Unit = {
-      while (true) {
-
-        //The main exit condition. We have colored everything.
-        if (remainingToBeColored <= 0) return
-
-        // println(s"Iteration $iterationCounter ")
-        //Broadcast the list of colors we need from the driver program
-        val colors_bcast = sc.broadcast(colors)
-
-        //From an adjmatrix RDD, produce a RDD of colors
-        //We can either become a color, or stay the same.
-        var colorsRDD = rdd.flatMap(elem => {
-
-          val thisId = elem._1.toInt
-          val adjlist = elem._2
-          val colors = colors_bcast.value
-          var betterPeasant = false
-          var c = 0 //the color we find for this guy
-
-          val neighborcolors = new Array[Int](currentMaxColor + 2)
-
-          //First, check if the node is a peasant. If it is, we can continue working
-          //Otherwise, if the node is a knight (the node has a color), we stop working right away.
-          if (colors(thisId) == 0) { //this node is a peasant
-
-            //First answer the following question : Can we become a knight in this iteration?
-            //For this, we have to have the best tiebreaker. To check for this, we look at our adjlist.
-            //If we find an earlier peasant that we are connected to, then we have to wait. If it's a knight and not a peasant, we are fine.
-            //To check for peasants, we go through our adjlist from a certain i to a certain j
-
-            //Batch iteration through the neighbors of this guy
-            val buffer = new Array[Int](256)
-            val it = adjlist.getBatchIterator
-
-            loop //enter loop
-            def loop(): Unit = {
-              while (it.hasNext) {
-                val batch = it.nextBatch(buffer)
-                for (i <- 0 until batch) {
-                  val neighbor = buffer(i)
-                  val neighborColor = colors(neighbor)
-                  neighborcolors(neighborColor) = 1
-                  if (neighborColor == 0) {
-                    betterPeasant = true
-                    return
-                  }
-                }
-              }
-            } //fin loop
-
-            //We can become a knight here
-            if (betterPeasant == false) {
-              c = color(neighborcolors)
-            }
-          } //fin du if this node is a peasant
-
-          //Return the id and the color. If no color was found return None?
-          if (c != 0) {
-            Some(thisId, c)
-          }
-          else None
-        }) //fin du map
-
-        //Unpersist the colors broadcast data structrure
-        colors_bcast.unpersist(false)
-
-        //Every vertex we have colored, we mark it in the colors data structure.
-        //We also filter out the vertices that don't improve to a knight
-        //val results = colorsRDD.collect().map(e => e.get)
-        val results = colorsRDD.collect()
-
-        //Update the colors structure, and update the maximum color at the same time
-        results.foreach(elem => {
-          colors(elem._1) = elem._2
-          remainingToBeColored -= 1
-          if (elem._2 > currentMaxColor) currentMaxColor = elem._2
-        })
-
-        iterationCounter += 1
-
-      } //while true loop here
-    } //def loop here
-
-    iterationCounter -= 1
-    //println(s"colored the chunk in $iterationCounter iterations")
-
-    //Return the iteration counter and the maxCounter
-    (iterationCounter, currentMaxColor)
-  }
 
 
 }

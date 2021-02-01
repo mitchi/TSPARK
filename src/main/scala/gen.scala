@@ -5,7 +5,6 @@ package central
 import central.gen.{distributed_graphcoloring, simple_hypergraphcover}
 import central.test3.sc
 import enumerator.distributed_enumerator
-import fastcoloring.fastColoring.fastcoloring
 import ordercoloring.OrderColoring.orderColoring
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
@@ -13,9 +12,11 @@ import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.mutable.ArrayBuffer
 import hypergraph_cover.Algorithm2._
+import org.roaringbitmap.RoaringBitmap
 import progressivecoloring.progressive_coloring
 import roaringcoloring.roaring_coloring.fastcoloring_roaring
 
+import java.nio.ByteBuffer
 import scala.io.Source
 //Import all enumerator functions
 import enumerator.distributed_enumerator._
@@ -23,6 +24,7 @@ import progressivecoloring.progressive_coloring._
 import utils._
 
 import roaringcoloring.roaring_coloring.coloring_roaring
+
 
 import cmdlineparser.TSPARK.save
 
@@ -729,8 +731,7 @@ object gen extends Serializable {
 
     val t1 = System.nanoTime()
 
-    //val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, algorithm)
-    val tests = fastcoloring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, n, v, algorithm)
+    val tests = coloring_roaring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, algorithm)
 
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
@@ -997,23 +998,26 @@ object test4 extends App {
 
 object test5 extends App {
 
-  import gen.distributed_graphcoloring_roaring
-  import ipog.d_ipog_roaring.distributed_ipog_coloring_roaring
   import gen.verifyTestSuite
-  import ipog.d_ipog.distributed_ipog_coloring
+
+  import fastColoring.fastColoring.distributed_fastcoloring
 
   val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
+  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+  //conf.set("spark.kryo.registrationRequired", "true")
+  conf.registerKryoClasses(Array(classOf[RoaringBitmap], classOf[ByteBuffer]))
+
   //.set("spark.checkpoint.compress", "true")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 100
-  var t = 2
+  var n = 10
+  var t = 7
   var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
+  val tests = distributed_fastcoloring(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
 
   //val tests = distributed_graphcoloring(n,t,v,sc, 4000, "OC")
 
@@ -1048,6 +1052,8 @@ object test6 extends App {
 
   val conf = new SparkConf().setMaster("local[1]").setAppName("Test hypergraph")
     .set("spark.driver.maxResultSize", "0")
+
+
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
@@ -1057,6 +1063,36 @@ object test6 extends App {
 
   val tests = simple_hypergraphcover(n, t, v, sc)
 
+
+}
+
+
+object test7 extends App {
+
+  import gen.verifyTestSuite
+  import fastColoringBitSetSpark.fastColoringBitSetSpark._
+
+  val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
+  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+  conf.set("spark.kryoserializer.buffer.max", "2047m")
+
+  val sc = new SparkContext(conf)
+  sc.setLogLevel("OFF")
+
+  var n = 3
+  var t = 2
+  var v = 2
+
+  import cmdlineparser.TSPARK.compressRuns
+  compressRuns = false
+  val tests = distributed_fastcoloring_bitset(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
+
+  println("We have " + tests.size + " tests")
+  println("Printing the tests....")
+  tests foreach (utils.print_helper(_))
+
+  println("\n\nVerifying test suite ... ")
+  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
 
 }
 

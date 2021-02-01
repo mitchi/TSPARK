@@ -41,6 +41,26 @@ object TSPARK {
     var t = opt[Int](name = "t", description = "Generate and join additional clauses using interaction strength t", default = 0)
   }
 
+
+  object FastColoring extends Command(name = "fastc", description = "Distributed Graph Coloring using the Fast Graph construction algorithm") with CommonOpt {
+
+    var t = arg[Int](name = "t",
+      description = "interaction strength")
+
+    var n = arg[Int](name = "n",
+      description = "number of parameters")
+
+    var v = arg[Int](name = "v",
+      description = "domain size of a parameter")
+
+    var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
+    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Default is 20k", default = 20000)
+    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
+    var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
+    var save = opt[Boolean](name = "save", abbrev = "s", description = "Save the test suite to a file")
+  }
+
+
   /**
     * Distributed IPOG Coloring avec Roaring Bitmaps
     */
@@ -226,7 +246,7 @@ object TSPARK {
       .version("1.0.0")
       .withProgramName("TSPARK")
       .withDescription("a distributed testing tool")
-      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
+      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, FastColoring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
 
     //Create the Spark Context if it does not already exist
     //The options of Spark can be set using the params of the program
@@ -244,6 +264,8 @@ object TSPARK {
 
     try {
       sc =  SparkContext.getOrCreate()
+      sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+
       if (logLevelError == true)
         sc.setLogLevel("ERROR")
     }
@@ -266,6 +288,7 @@ object TSPARK {
     println(s"Printing sc.deploymode : ${sc.deployMode}")
     println(s"Printing sc.defaultParallelism : ${sc.defaultParallelism}")
 
+
     println(s"Printing sc.conf : ${sc.getConf}")
     //println(s"Printing spark.conf : ${spark.conf}")
     println(s"Printing boolean sc.islocal : ${sc.isLocal}")
@@ -281,6 +304,32 @@ object TSPARK {
     import phiway_hypergraph.phiway_hypergraph._
 
     choice match {
+
+      //Implémentation de Fast Coloring
+      case Some(FastColoring) => {
+
+        import fastColoring.fastColoring.distributed_fastcoloring
+
+        val n = FastColoring.n
+        val t = FastColoring.t
+        val v = FastColoring.v
+
+        save = FastColoring.save
+        val chunkSize = FastColoring.chunkSize
+        val verify = FastColoring.verify
+        val algorithm = FastColoring.algorithm //Default is OC, Order Coloring
+        compressRuns = FastColoring.compressRuns
+
+        val tests = distributed_fastcoloring(n, t, v, sc, chunkSize, algorithm)
+
+        //Verify the test suite (optional)
+        if (verify == true) {
+          val combos = fastGenCombos(n, t, v, sc)
+          val a = verifyTS(combos, tests, sc)
+          if (a == true) println("Test suite is verified")
+          else println("This test suite does not cover the combos")
+        }
+      }
 
       case Some(Phiwayparser) => {
 
