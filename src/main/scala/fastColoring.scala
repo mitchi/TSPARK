@@ -18,7 +18,7 @@ import scala.collection.mutable.Set
 
 object fastColoring extends Serializable {
 
-  var debug = true
+  var debug = false
 
 
   /**
@@ -51,6 +51,7 @@ object fastColoring extends Serializable {
 
     //Before everything, we can color the first vertex with the color 1
     var maxColor = 1
+    colors(0) = 1
     var i = 1 //the number of vertices we have colored
     var chunkNo = 0
 
@@ -114,7 +115,6 @@ object fastColoring extends Serializable {
       }
 
       val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
-      r1.collect()
 
       //On debug ce qu'on a
       println("Debug de l'adj list")
@@ -129,11 +129,21 @@ object fastColoring extends Serializable {
           ordercoloring(colors, r1.collect().sortBy(_._1), i, maxColor)
         }
 
+      println("On imprime le tableau des couleurs après coloriage du chunk par OrderColoring")
+      for (i <- 0 until colors.size) {
+        val v = colors(i)
+        println(s"vertex $i has color $v")
+      }
+
       //Update the max color
       totalIterations += r2._1
       maxColor = r2._2
+      println(s"max color is now $maxColor")
+
       r1.unpersist(true)
-      i += chunkSize //1 + 10000 = 10001
+      i += sizeOfChunk //1 + 10000 = 10001
+
+      println(s"i is now $i")
 
       loop
     }
@@ -282,7 +292,7 @@ object fastColoring extends Serializable {
     val r1 = combos.flatMap( combo => {
       //le id du combat. On n'a pas besoin de mettre des sommets plus gros que lui dans sa liste d'adjacence
       val id = combo._2
-      if (id != 0 && id < i+step) { //Discard first combo, it is already colored. We don't need to compute its adjlist
+      if (id != 0 && id < i+step && id >=i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
         val adjlist = comboToADJ(id, combo._1, tableau, etoiles)
         Some(combo._2, adjlist)
@@ -399,6 +409,81 @@ object fastColoring extends Serializable {
     //On retourne notre travail
     tableau
   }
+
+
+  /**
+    * Color N vertices at a time using the Order Coloring algorithm.
+    * The adjvectors are precalculated
+    *
+    * @return
+    */
+  def ordercoloring(colors: Array[Int], adjMatrix: Array[(Long, RoaringBitmap)], i: Int,
+                    maxColor: Int) = {
+
+    //    import scala.io.StdIn.readLine
+    //    println("On pause ici. Va voir la taille du truc dans Spark UI")
+    //    var temp = readLine()
+
+    val limit = adjMatrix.size //the number of iterations we do
+    var j = 0 //start coloring using the first adjvector of the adjmatrix
+    var currentMaxColor = maxColor
+
+    loop
+
+    def loop(): Unit = {
+
+      //Only color n vertices in this loop
+      if (j == limit) return
+
+      //Build the neighborcolors data structure for this vertex (j)
+      //We iterate through the adjvector to find every colored vertex he's connected to and take their color.
+      val neighborcolors = new Array[Int](currentMaxColor + 2)
+
+      //Batch iteration through the neighbors of this guy
+      val buffer = new Array[Int](256)
+      val it = adjMatrix(j)._2.getBatchIterator
+      while (it.hasNext) {
+        val batch = it.nextBatch(buffer)
+        for (i <- 0 until batch) {
+          val neighbor = buffer(i)
+          val neighborColor = colors(neighbor)
+          neighborcolors(neighborColor) = 1
+        }
+      }
+
+      val foundColor = color(neighborcolors)
+      colors(i + j) = foundColor
+
+      if (foundColor > currentMaxColor) currentMaxColor = foundColor
+
+      j += 1 //we color the next vertex
+      loop
+    }
+
+    //Return the number of iterations we did, and the maxColor
+    (limit, currentMaxColor)
+  }
+
+  /**
+    * MUTABLE.
+    * This function works with a lookup table of colors ( color not here = 0, here = 1)
+    * Color using this function and good parameters
+    * Use this function the vertex is adjacent to the other, and we want to know what the best color is
+    *
+    * @param vertices
+    * @param vertex
+    * @return THE COLOR THAT WE CAN TAKE
+    */
+  def color(neighbor_colors: Array[Int]): Int = {
+    for (i <- 1 to neighbor_colors.length) {
+      if (neighbor_colors(i) != 1) //if this color is not present
+        return i //we choose it
+    }
+    return 1 //the case when the color lookuo table is empty
+  }
+
+
+
 
 
 
