@@ -117,8 +117,8 @@ object fastColoring extends Serializable {
       val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
 
       //On debug ce qu'on a
-      println("Debug de l'adj list")
-      r1.collect().foreach(  e => println(s"${e._1} ${e._2.toString}"))
+      //println("Debug de l'adj list")
+      //r1.collect().foreach(  e => println(s"${e._1} ${e._2.toString}"))
 
       //Use KP when the graph is sparse (not dense)
       val r2 =
@@ -129,10 +129,12 @@ object fastColoring extends Serializable {
           ordercoloring(colors, r1.collect().sortBy(_._1), i, maxColor)
         }
 
-      println("On imprime le tableau des couleurs après coloriage du chunk par OrderColoring")
-      for (i <- 0 until colors.size) {
-        val v = colors(i)
-        println(s"vertex $i has color $v")
+      if (debug == true) {
+        println("On imprime le tableau des couleurs après coloriage du chunk par OrderColoring")
+        for (i <- 0 until colors.size) {
+          val v = colors(i)
+          println(s"vertex $i has color $v")
+        }
       }
 
       //Update the max color
@@ -210,9 +212,9 @@ object fastColoring extends Serializable {
       }
     }
 
-    println("List of combos with valid params " + list.toString)
-    println("List of combos with stars " + etoiles.toString)
-    println("the certified invalid combos "+ adjlist.toString)
+    //println("List of combos with valid params " + list.toString)
+    //println("List of combos with stars " + etoiles.toString)
+    //println("the certified invalid combos "+ adjlist.toString)
 
     adjlist
   }
@@ -235,13 +237,13 @@ object fastColoring extends Serializable {
     var i = 0 //quel paramètre?
     var certifiedInvalidGuys = new RoaringBitmap()
 
-    println("Combo is " + utils.print_helper(combo) + s" id is $id")
+    //println("Combo is " + utils.print_helper(combo) + s" id is $id")
 
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
 
-      println(s"i=$i, value is $it")
-      if (it == '*') println("*, we skip")
+      //println(s"i=$i, value is $it")
+     // if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -257,8 +259,11 @@ object fastColoring extends Serializable {
       i+=1
     }
 
-    println(s"list of all certified invalid guys" + certifiedInvalidGuys.toString)
-    println("\n\n")
+    if (debug == true) {
+      println(s"list of all certified invalid guys" + certifiedInvalidGuys.toString)
+      println("\n\n")
+    }
+
 
     //On retourne cette liste, qui contient au maximum chunkSize éléments
     //Il faut ajuster la valeur des éléments de cette liste pour les id du chunk
@@ -387,9 +392,11 @@ object fastColoring extends Serializable {
                    chunk: Array[(Array[Char], Long)], n : Int, v : Int) = {
     //On pourrait également faire Array[Array[Int]] et faire un indexage plus compliqué
 
-    println("On print les combos du chunk")
-    for (c <- chunk) {
-      print(c._2 + " ") ; utils.print_helper(c._1)
+    if (debug == true) {
+      println("On print les combos du chunk")
+      for (c <- chunk) {
+        print(c._2 + " ") ; utils.print_helper(c._1)
+      }
     }
 
     var indexCombo = 0

@@ -937,12 +937,12 @@ object test3 extends App {
   // tests foreach (utils.print_helper(_))
   import progressivecoloring.progressive_coloring._
   //
-  var n = 3
-  var t = 2
+  var n = 10
+  var t = 7
   var v = 2
 
   progressive_coloring.debug = true //activate debug mode
-  val tests = distributed_graphcoloring(n, t, v, sc, 6, "KP") //4000 pour 100 2 2
+  val tests = distributed_graphcoloring(n, t, v, sc, 10000, "KP") //4000 pour 100 2 2
 
 
   println("We have " + tests.size + " tests")
@@ -1002,18 +1002,18 @@ object test5 extends App {
   import gen.verifyTestSuite
   import ipog.d_ipog.distributed_ipog_coloring
 
-  val conf = new SparkConf().setMaster("local[1]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
+  val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
   //.set("spark.checkpoint.compress", "true")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 3
+  var n = 100
   var t = 2
   var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 4, "OC") //4000 pour 100 2 2
+  val tests = distributed_graphcoloring_roaring(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
 
   //val tests = distributed_graphcoloring(n,t,v,sc, 4000, "OC")
 
