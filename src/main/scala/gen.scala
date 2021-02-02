@@ -1,7 +1,6 @@
 //This file needs more refactoring
 
 package central
-
 import central.gen.{distributed_graphcoloring, simple_hypergraphcover}
 import central.test3.sc
 import enumerator.distributed_enumerator
@@ -1065,33 +1064,33 @@ object test6 extends App {
 
 }
 
-
-object test7 extends App {
-
-  import gen.verifyTestSuite
-  import fastColoringBitSetSpark.fastColoringBitSetSpark._
-
-  val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
-  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
-  conf.set("spark.kryoserializer.buffer.max", "2047m")
-
-  val sc = new SparkContext(conf)
-  sc.setLogLevel("OFF")
-
-  var n = 3
-  var t = 2
-  var v = 2
-
-  import cmdlineparser.TSPARK.compressRuns
-  compressRuns = false
-  val tests = distributed_fastcoloring_bitset(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
-
-  println("We have " + tests.size + " tests")
-  println("Printing the tests....")
-  tests foreach (utils.print_helper(_))
-
-  println("\n\nVerifying test suite ... ")
-  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
-
-}
+//
+//object test7 extends App {
+//
+//  import gen.verifyTestSuite
+//  import fastColoringBitSetSpark.fastColoringBitSetSpark._
+//
+//  val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
+//  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+//  conf.set("spark.kryoserializer.buffer.max", "2047m")
+//
+//  val sc = new SparkContext(conf)
+//  sc.setLogLevel("OFF")
+//
+//  var n = 3
+//  var t = 2
+//  var v = 2
+//
+//  import cmdlineparser.TSPARK.compressRuns
+//  compressRuns = false
+//  val tests = distributed_fastcoloring_bitset(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
+//
+//  println("We have " + tests.size + " tests")
+//  println("Printing the tests....")
+//  tests foreach (utils.print_helper(_))
+//
+//  println("\n\nVerifying test suite ... ")
+//  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
+//
+//}
 

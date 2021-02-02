@@ -264,9 +264,6 @@ object TSPARK {
 
     try {
       sc =  SparkContext.getOrCreate()
-      println("Using the Kryo Serializer...")
-      sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
-
       if (logLevelError == true)
         sc.setLogLevel("ERROR")
     }
@@ -278,6 +275,13 @@ object TSPARK {
           sc.setLogLevel("ERROR")
     }
 
+    println("Using the Kryo Serializer...")
+    println("Using a Custom registrator for Kryro for Roaring bitmaps")
+    println("Using spark.kryoserializer.buffer.max=2047m")
+
+    sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+    sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+    sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
 
     //val spark = SparkSession.builder.appName("TSPARK").getOrCreate() //on recupere le spark du cluster
 
@@ -309,7 +313,7 @@ object TSPARK {
       //Implémentation de Fast Coloring
       case Some(FastColoring) => {
 
-        import fastColoring.fastColoring.distributed_fastcoloring
+        import fastColoringKryo.fastColoring.distributed_fastcoloring
 
         val n = FastColoring.n
         val t = FastColoring.t

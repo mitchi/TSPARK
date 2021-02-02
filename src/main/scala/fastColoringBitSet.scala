@@ -1,25 +1,19 @@
 package fastColoringBitSet
 
-import central.gen.filename
+import central.gen
+import central.gen.{filename, verifyTestSuite}
 import cmdlineparser.TSPARK.save
-import cmdlineparser.TSPARK.compressRuns
 import enumerator.distributed_enumerator.fastGenCombos
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
 import utils.utils
 import progressivecoloring.progressive_coloring.assign_numberClauses
-
 import scala.util.Random
 import ordercoloring.OrderColoring.coloringToTests
-import org.roaringbitmap.RoaringBitmap
-
-import java.nio.ByteBuffer
-import scala.collection.mutable
 import scala.collection.mutable.BitSet
+
 object fastColoringBitSet extends Serializable {
-
   var debug = false
-
   /**
     *
     */
@@ -281,7 +275,6 @@ object fastColoringBitSet extends Serializable {
     //Print the number of partitions we are using
     val partitions = combos.getNumPartitions
     println("Generating the adjacency lists using the fast graph construction algorithm...")
-    println(s"Run compression : $compressRuns")
     println(s"Currently using $partitions partitions")
 
     val tableau_bcast = sc.broadcast(tableau)
@@ -493,13 +486,12 @@ object fastColoringBitSet extends Serializable {
     * @param sc
     * @return
     */
-  def distributed_fastcoloring_bitset(n: Int, t: Int, v: Int, sc: SparkContext,
+  def fastcoloring_bitset(n: Int, t: Int, v: Int, sc: SparkContext,
                                chunkSize: Int = 4000, algorithm: String = "OC"): Array[Array[Char]] = {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
-    println("Distributed Graph Coloring with FastColoring algorithm, BitSets for graph construction")
-    println(s"Run compression for Roaring Bitmap = $compressRuns")
+    println("Distributed Graph Coloring with FastColoring algorithm, BitSets for graph construction and Graph adjlists")
     println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
     println(s"Expected number of combinations is : $expected ")
@@ -530,9 +522,31 @@ object fastColoringBitSet extends Serializable {
     tests
   }
 
+}
 
 
+object testBitSetColoring extends App {
 
+  import gen.verifyTestSuite
+  import fastColoringBitSet.fastcoloring_bitset
 
+  val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK FastColoring BitSet").set("spark.driver.maxResultSize", "0")
+  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+  conf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+  conf.set("spark.kryoserializer.buffer.max", "2047m")
+
+  val sc = new SparkContext(conf)
+  sc.setLogLevel("OFF")
+  var n = 3
+  var t = 2
+  var v = 2
+  val tests = fastcoloring_bitset(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
+  println("We have " + tests.size + " tests")
+  println("Printing the tests....")
+  tests foreach (utils.print_helper(_))
+
+  println("\n\nVerifying test suite ... ")
+  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
 
 }
+

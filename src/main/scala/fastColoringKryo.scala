@@ -478,7 +478,7 @@ object fastColoring extends Serializable {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
-    println("Distributed Graph Coloring with FastGraphConstruction algorithm & Roaring Bitmaps")
+    println("Distributed Graph Coloring with FastGraphConstruction algorithm & Roaring Bitmaps and Kryro Serialization")
     println(s"Run compression for Roaring Bitmap = $compressRuns")
     println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
