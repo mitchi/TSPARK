@@ -264,6 +264,7 @@ object TSPARK {
 
     try {
       sc =  SparkContext.getOrCreate()
+      println("Using the Kryo Serializer...")
       sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
 
       if (logLevelError == true)

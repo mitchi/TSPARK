@@ -22,6 +22,72 @@ import java.nio.ByteBuffer
 object fastColoring extends Serializable {
 
   var debug = false
+  //etoiles: Array[MutableRoaringBitmap],
+
+  /**
+    * @param tableau Array of Array of MutableRoaringBitmap
+    * @output Array of Array of Array[Byte]
+    */
+  def deserializeTableau(tableau : Array[Array[Array[Byte]]]) =
+  {
+    val n = tableau.size
+    val v = tableau(0).size
+    val outputTab = new Array[Array[RoaringBitmap]](n)
+
+    for (i <- 0 until n ) {
+      outputTab(i) = new Array[RoaringBitmap](v)
+      for (v <- 0 until v) {
+        outputTab(i)(v) = dszBitmap(tableau(i)(v))
+      }
+    }
+    outputTab
+  }
+
+  /**
+    * @param tableau Array of Array of MutableRoaringBitmap
+    * @output Array of Array of Array[Byte]
+    */
+  def serializeTableau(tableau : Array[Array[MutableRoaringBitmap]]) =
+  {
+    val n = tableau.size
+    val v = tableau(0).size
+
+    val outputTab = new Array[Array[Array[Byte]]](n)
+    for (i <- 0 until n ) {
+      outputTab(i) = new Array[Array[Byte]](v)
+      for (v <- 0 until v) {
+        outputTab(i)(v) = szBitmap(tableau(i)(v))
+      }
+    }
+    outputTab
+  }
+
+
+
+
+
+
+  /**
+    * Serialize a RoaringBitmap to an array of bytes
+    *
+    * @param bitmap
+    */
+  def szBitmap(bitmap: MutableRoaringBitmap) = {
+    val arr = new Array[Byte](bitmap.serializedSizeInBytes)
+    bitmap.serialize(ByteBuffer.wrap(arr))
+    arr
+  }
+
+  /**
+    *  Deserialize the Roaring bitmap from an array of bytes
+    * @param arr
+    * @return
+    */
+  def dszBitmap( arr: Array[Byte]) : RoaringBitmap = {
+    val ret: RoaringBitmap = new RoaringBitmap()
+    ret.deserialize(ByteBuffer.wrap(arr))
+    ret
+  }
 
   /**
     *
@@ -313,6 +379,9 @@ object fastColoring extends Serializable {
     println(s"Run compression : $compressRuns")
     println(s"Currently using $partitions partitions")
 
+    println("Serializing the data before broadcast")
+
+
     println("Broadcasting tableau and etoiles...")
     val etoilesdata = sc.broadcast(etoiles)
     val tableaudata = sc.broadcast(tableau)
@@ -323,7 +392,7 @@ object fastColoring extends Serializable {
       val id = combo._2
       if (id != 0 && id < i+step && id >=i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
-        val adjlist = comboToADJ(id, combo._1, tableaudata.value, etoilesdata.value)
+        val adjlist: MutableRoaringBitmap = comboToADJ(id, combo._1, tableaudata.value, etoilesdata.value)
 
         if (compressRuns == true) adjlist.runOptimize()
         //Application de la sérialisation
