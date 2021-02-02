@@ -7,7 +7,7 @@ import org.roaringbitmap.RoaringBitmap
 
 class MyRegistrator extends KryoRegistrator {
   override def registerClasses(kryo: Kryo) {
-    System.err.println("REGISTRATOR REGISTRATORREGISTRATORREGISTRATORREGISTRATORREGISTRATORREGISTRATOR")
+    //System.err.println("REGISTRATOR REGISTRATORREGISTRATORREGISTRATORREGISTRATORREGISTRATORREGISTRATOR")
     kryo register(classOf[RoaringBitmap], new RoaringSerializer())
   }
 }

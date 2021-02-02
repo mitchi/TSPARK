@@ -14,15 +14,10 @@ import progressivecoloring.progressive_coloring.assign_numberClauses
 import scala.util.Random
 import ordercoloring.OrderColoring.coloringToTests
 import org.roaringbitmap.RoaringBitmap
-import org.roaringbitmap.buffer.ImmutableRoaringBitmap
-import roaringkp.roaringkp.color
-
-import java.nio.ByteBuffer
 
 object fastColoring extends Serializable {
 
   var debug = false
-  //etoiles: Array[MutableRoaringBitmap],
 
   /**
     *
@@ -100,33 +95,14 @@ object fastColoring extends Serializable {
       tableau = addToTableau(tableau, someCombos, n, v)
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
 
-
-      if (debug == true) {
-        println("On imprime le tableau apres remplissage")
-        for (i <- 0 until n){ //pour tous les paramètres
-          for (j <- 0 until v) { //pour toutes les valeurs
-            println(s"p$i=$j "+ tableau(i)(j).toString)
-          }
-        }
-
-        println("On imprime le tableau etoiles")
-        var tt = 0
-        for (elem <- etoiles) {
-          println(s"p$tt=*" + " " +elem)
-          tt+=1
-        }
-      }
-
       val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
 
       //Use KP when the graph is sparse (not dense)
       val r2 =
         if (algorithm == "KP") {
-
           progressiveKP(colors, r1, r1.count().toInt, maxColor, sc)
         }
         else { //algorithm = "OC". The single threaded needs a sorted matrix of adjlists
-
           ordercoloring(colors, r1.collect().sortBy(_._1), i, maxColor)
         }
 
@@ -213,14 +189,8 @@ object fastColoring extends Serializable {
       }
     }
 
-    //println("List of combos with valid params " + list.toString)
-    //println("List of combos with stars " + etoiles.toString)
-    //println("the certified invalid combos "+ adjlist.toString)
-
     adjlist
   }
-
-
 
   /**
     *
@@ -260,13 +230,11 @@ object fastColoring extends Serializable {
       println("\n\n")
     }
 
-
     //On retourne cette liste, qui contient au maximum chunkSize éléments
     //Il faut ajuster la valeur des éléments de cette liste pour les id du chunk
     certifiedInvalidGuys
 
   }
-
 
   /**
     * Input: RDD de combos, tableau, etoiles. Output: un RDD de (id, adjlist) pour colorier le graphew
@@ -290,10 +258,6 @@ object fastColoring extends Serializable {
     println("Generating the adjacency lists using the fast graph construction algorithm...")
     println(s"Run compression : $compressRuns")
     println(s"Currently using $partitions partitions")
-
-    println("Serializing the data before broadcast")
-
-
     println("Broadcasting tableau and etoiles...")
     val etoilesdata = sc.broadcast(etoiles)
     val tableaudata = sc.broadcast(tableau)
@@ -307,7 +271,6 @@ object fastColoring extends Serializable {
         val adjlist = comboToADJ(id, combo._1, tableaudata.value, etoilesdata.value)
 
         if (compressRuns == true) adjlist.runOptimize()
-        //Application de la sérialisation
 
         Some(combo._2, adjlist)
       }
@@ -515,7 +478,7 @@ object fastColoring extends Serializable {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
-    println("Distributed Graph Coloring with FastColoring algorithm for graph construction")
+    println("Distributed Graph Coloring with FastGraphConstruction algorithm & Roaring Bitmaps")
     println(s"Run compression for Roaring Bitmap = $compressRuns")
     println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
@@ -532,8 +495,8 @@ object fastColoring extends Serializable {
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
 
-    pw.append(s"$t;$n;$v;FASTCOLORING;$time_elapsed;${tests.size}\n")
-    println(s"$t;$n;$v;FASTCOLORING;$time_elapsed;${tests.size}\n")
+    pw.append(s"$t;$n;$v;FASTCOLORINGKRYO;$time_elapsed;${tests.size}\n")
+    println(s"$t;$n;$v;FASTCOLORINGKRYO;$time_elapsed;${tests.size}\n")
     pw.flush()
 
     //If the option to save to a text file is activated
@@ -690,7 +653,6 @@ object testFCKryro extends App {
 
   println("\n\nVerifying test suite ... ")
   println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
-
 
 }
 

@@ -14,8 +14,7 @@ import java.io.IOException;
 public class RoaringSerializer extends Serializer<RoaringBitmap> {
     @Override
     public void write(Kryo kryo, Output output, RoaringBitmap bitmap) {
-        System.out.println("KRYO TABARNAK");
-        System.err.println("KRYOOOOOOOOOOOOOOOOOOOOOOOOOO");
+       // System.out.println("KRYO WRITE");
         try {
             bitmap.serialize(new KryoDataOutput(output));
         } catch (IOException e) {
@@ -27,10 +26,7 @@ public class RoaringSerializer extends Serializer<RoaringBitmap> {
     @Override
     public RoaringBitmap read(Kryo kryo, Input input, Class<RoaringBitmap> type) {
         RoaringBitmap bitmap = new RoaringBitmap();
-
-        System.out.println("KRYO TABARNAK");
-        System.err.println("KRYOOOOOOOOOOOOOOOOOOOOOOOOOO");
-
+      //  System.out.println("KRYO READ");
         try {
             bitmap.deserialize(new KryoDataInput(input));
         } catch (IOException e) {
