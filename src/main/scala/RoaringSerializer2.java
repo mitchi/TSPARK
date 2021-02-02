@@ -6,16 +6,14 @@ import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.KryoDataInput;
 import com.esotericsoftware.kryo.io.KryoDataOutput;
 import com.esotericsoftware.kryo.io.Output;
-import org.roaringbitmap.RoaringBitmap;
 import org.roaringbitmap.buffer.MutableRoaringBitmap;
 
 import java.io.IOException;
 
-public class RoaringSerializer extends Serializer<RoaringBitmap> {
+public class RoaringSerializer2 extends Serializer<MutableRoaringBitmap> {
     @Override
-    public void write(Kryo kryo, Output output, RoaringBitmap bitmap) {
+    public void write(Kryo kryo, Output output, MutableRoaringBitmap bitmap) {
         System.out.println("KRYO TABARNAK");
-        System.err.println("KRYOOOOOOOOOOOOOOOOOOOOOOOOOO");
         try {
             bitmap.serialize(new KryoDataOutput(output));
         } catch (IOException e) {
@@ -25,12 +23,8 @@ public class RoaringSerializer extends Serializer<RoaringBitmap> {
     }
 
     @Override
-    public RoaringBitmap read(Kryo kryo, Input input, Class<RoaringBitmap> type) {
-        RoaringBitmap bitmap = new RoaringBitmap();
-
-        System.out.println("KRYO TABARNAK");
-        System.err.println("KRYOOOOOOOOOOOOOOOOOOOOOOOOOO");
-
+    public MutableRoaringBitmap read(Kryo kryo, Input input, Class<MutableRoaringBitmap> type) {
+        MutableRoaringBitmap bitmap = new MutableRoaringBitmap();
         try {
             bitmap.deserialize(new KryoDataInput(input));
         } catch (IOException e) {
@@ -40,9 +34,3 @@ public class RoaringSerializer extends Serializer<RoaringBitmap> {
         return bitmap;
     }
 }
-
-
-
-
-
-

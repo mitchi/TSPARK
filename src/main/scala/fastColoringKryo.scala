@@ -1,10 +1,12 @@
-package fastColoring
+package fastColoringKryo
 
-import central.gen.filename
+import central.gen
+import central.gen.{filename, verifyTestSuite}
 import cmdlineparser.TSPARK.save
 import cmdlineparser.TSPARK.compressRuns
 import enumerator.distributed_enumerator.fastGenCombos
-import org.apache.spark.SparkContext
+import fastColoringKryo.fastColoring.distributed_fastcoloring
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
 import utils.utils
 import progressivecoloring.progressive_coloring.assign_numberClauses
@@ -12,12 +14,10 @@ import progressivecoloring.progressive_coloring.assign_numberClauses
 import scala.util.Random
 import ordercoloring.OrderColoring.coloringToTests
 import org.roaringbitmap.RoaringBitmap
-import org.roaringbitmap.buffer.MutableRoaringBitmap
 import org.roaringbitmap.buffer.ImmutableRoaringBitmap
 import roaringkp.roaringkp.color
 
 import java.nio.ByteBuffer
-
 
 object fastColoring extends Serializable {
 
@@ -25,74 +25,13 @@ object fastColoring extends Serializable {
   //etoiles: Array[MutableRoaringBitmap],
 
   /**
-    * @param tableau Array of Array of MutableRoaringBitmap
-    * @output Array of Array of Array[Byte]
-    */
-  def deserializeTableau(tableau : Array[Array[Array[Byte]]]) =
-  {
-    val n = tableau.size
-    val v = tableau(0).size
-    val outputTab = new Array[Array[RoaringBitmap]](n)
-
-    for (i <- 0 until n ) {
-      outputTab(i) = new Array[RoaringBitmap](v)
-      for (v <- 0 until v) {
-        outputTab(i)(v) = dszBitmap(tableau(i)(v))
-      }
-    }
-    outputTab
-  }
-
-  /**
-    * @param tableau Array of Array of MutableRoaringBitmap
-    * @output Array of Array of Array[Byte]
-    */
-  def serializeTableau(tableau : Array[Array[MutableRoaringBitmap]]) =
-  {
-    val n = tableau.size
-    val v = tableau(0).size
-
-    val outputTab = new Array[Array[Array[Byte]]](n)
-    for (i <- 0 until n ) {
-      outputTab(i) = new Array[Array[Byte]](v)
-      for (v <- 0 until v) {
-        outputTab(i)(v) = szBitmap(tableau(i)(v))
-      }
-    }
-    outputTab
-  }
-
-
-  /**
-    * Serialize a RoaringBitmap to an array of bytes
-    *
-    * @param bitmap
-    */
-  def szBitmap(bitmap: MutableRoaringBitmap) = {
-    val arr = new Array[Byte](bitmap.serializedSizeInBytes)
-    bitmap.serialize(ByteBuffer.wrap(arr))
-    arr
-  }
-
-  /**
-    *  Deserialize the Roaring bitmap from an array of bytes
-    * @param arr
-    * @return
-    */
-  def dszBitmap( arr: Array[Byte]) : RoaringBitmap = {
-    val ret: RoaringBitmap = new RoaringBitmap()
-    ret.deserialize(ByteBuffer.wrap(arr))
-    ret
-  }
-
-  /**
     *
     */
   def fastcoloring(combos: RDD[Array[Char]],
-                           sc: SparkContext,
-                           chunkSize: Int,
-                           n: Int, v : Int,
-                           algorithm: String = "OC") = {
+                   sc: SparkContext,
+                   chunkSize: Int,
+                   n: Int, v : Int,
+                   algorithm: String = "OC") = {
 
     val count = combos.count()
     //Toutes nos couleurs sont la
@@ -180,33 +119,15 @@ object fastColoring extends Serializable {
 
       val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
 
-      //On debug ce qu'on a
-      //println("Debug de l'adj list")
-      //r1.collect().foreach(  e => println(s"${e._1} ${e._2.toString}"))
-
       //Use KP when the graph is sparse (not dense)
       val r2 =
         if (algorithm == "KP") {
 
-          //Deserialize le gros machin a la main haha
-          val r1after = r1.map( e => {
-            val ret = new RoaringBitmap()
-            ret.deserialize(ByteBuffer.wrap(e._2))
-            (e._1, ret)
-          })
-
-          progressiveKP(colors, r1after, r1.count().toInt, maxColor, sc)
+          progressiveKP(colors, r1, r1.count().toInt, maxColor, sc)
         }
         else { //algorithm = "OC". The single threaded needs a sorted matrix of adjlists
 
-          //Deserialize le gros machin a la main haha
-          val arr = r1.collect().sortBy(_._1).map( e => {
-            val ret = new RoaringBitmap()
-            ret.deserialize(ByteBuffer.wrap(e._2))
-            (e._1, ret)
-          })
-
-          ordercoloring(colors, arr, i, maxColor)
+          ordercoloring(colors, r1.collect().sortBy(_._1), i, maxColor)
         }
 
       if (debug == true) {
@@ -256,8 +177,8 @@ object fastColoring extends Serializable {
     * @return
     */
   def generateOtherList( id: Long,
-                         list : MutableRoaringBitmap,
-                         etoiles: MutableRoaringBitmap) = {
+                         list : RoaringBitmap,
+                         etoiles: RoaringBitmap) = {
     //On construit une lookup table avec la liste des bons combos
     //La liste est exactement de la taille du id
     var lookuptable = new Array[Byte](id.toInt)
@@ -273,8 +194,8 @@ object fastColoring extends Serializable {
       }
     }
 
-  //On ajoute les etoiles également
-  val buffer2 = new Array[Int](256)
+    //On ajoute les etoiles également
+    val buffer2 = new Array[Int](256)
     val ite2 = etoiles.getBatchIterator
     while (ite2.hasNext) {
       val batch = ite2.nextBatch(buffer2)
@@ -284,7 +205,7 @@ object fastColoring extends Serializable {
     }
 
     //On inverse la lsite maintenant
-    var adjlist = new MutableRoaringBitmap()
+    var adjlist = new RoaringBitmap()
     var index = 0
     for (i <- 0 until id.toInt) {
       if (lookuptable(i) == 0) {
@@ -311,19 +232,14 @@ object fastColoring extends Serializable {
     */
   def comboToADJ(id: Long,
                  combo: Array[Char],
-                 tableau: Array[Array[MutableRoaringBitmap]],
-                 etoiles: Array[MutableRoaringBitmap]) = {
+                 tableau: Array[Array[RoaringBitmap]],
+                 etoiles: Array[RoaringBitmap]) = {
 
     var i = 0 //quel paramètre?
-    var certifiedInvalidGuys = new MutableRoaringBitmap()
-
-    //println("Combo is " + utils.print_helper(combo) + s" id is $id")
+    var certifiedInvalidGuys = new RoaringBitmap()
 
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
-
-      //println(s"i=$i, value is $it")
-     // if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -363,10 +279,10 @@ object fastColoring extends Serializable {
     * @return
     */
   def generateadjlist_fastcoloring(i : Long, step: Long,
-                                combos: RDD[(Array[Char], Long)],
-                                tableau: Array[Array[MutableRoaringBitmap]],
-                                etoiles: Array[MutableRoaringBitmap],
-                                sc : SparkContext) =
+                                   combos: RDD[(Array[Char], Long)],
+                                   tableau: Array[Array[RoaringBitmap]],
+                                   etoiles: Array[RoaringBitmap],
+                                   sc : SparkContext) =
   {
 
     //Print the number of partitions we are using
@@ -388,15 +304,12 @@ object fastColoring extends Serializable {
       val id = combo._2
       if (id != 0 && id < i+step && id >=i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
-        val adjlist: MutableRoaringBitmap = comboToADJ(id, combo._1, tableaudata.value, etoilesdata.value)
+        val adjlist = comboToADJ(id, combo._1, tableaudata.value, etoilesdata.value)
 
         if (compressRuns == true) adjlist.runOptimize()
         //Application de la sérialisation
 
-        val arr = new Array[Byte](adjlist.serializedSizeInBytes)
-        adjlist.serialize(ByteBuffer.wrap(arr))
-
-        Some(combo._2, arr)
+        Some(combo._2, adjlist)
       }
       else {
         //println("Not calculing adjlist for first combo")
@@ -435,13 +348,13 @@ object fastColoring extends Serializable {
     *  */
   def initTableau(n: Int, v : Int) =
   {
-    var tableau = new Array[Array[MutableRoaringBitmap]](n)
+    var tableau = new Array[Array[RoaringBitmap]](n)
 
     //On met très exactement n paramètres, chacun avec v valeurs. On ne gère pas les *
     for (i <- 0 until n ) {
-      tableau(i) = new Array[MutableRoaringBitmap](v)
+      tableau(i) = new Array[RoaringBitmap](v)
       for (v <- 0 until v) {
-        tableau(i)(v) = new MutableRoaringBitmap()
+        tableau(i)(v) = new RoaringBitmap()
       }
     }
     tableau
@@ -453,17 +366,17 @@ object fastColoring extends Serializable {
     */
   def initTableauEtoiles(n: Int) =
   {
-    var tableauEtoiles = new Array[MutableRoaringBitmap](n)
+    var tableauEtoiles = new Array[RoaringBitmap](n)
 
     for (i <- 0 until n) {
-      tableauEtoiles(i) = new MutableRoaringBitmap()
+      tableauEtoiles(i) = new RoaringBitmap()
     }
 
     tableauEtoiles
   }
 
 
-  def addTableauEtoiles(etoiles: Array[MutableRoaringBitmap],
+  def addTableauEtoiles(etoiles: Array[RoaringBitmap],
                         chunk: Array[(Array[Char], Long)], n : Int, v : Int ) = {
 
     //On remplit cette structure avec notre chunk
@@ -486,7 +399,7 @@ object fastColoring extends Serializable {
     * @param n
     * @param v
     */
-  def addToTableau(tableau: Array[Array[MutableRoaringBitmap]],
+  def addToTableau(tableau: Array[Array[RoaringBitmap]],
                    chunk: Array[(Array[Char], Long)], n : Int, v : Int) = {
     //On pourrait également faire Array[Array[Int]] et faire un indexage plus compliqué
 
@@ -598,7 +511,7 @@ object fastColoring extends Serializable {
     * @return
     */
   def distributed_fastcoloring(n: Int, t: Int, v: Int, sc: SparkContext,
-                                        chunkSize: Int = 4000, algorithm: String = "OC"): Array[Array[Char]] = {
+                               chunkSize: Int = 4000, algorithm: String = "OC"): Array[Array[Char]] = {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
@@ -748,6 +661,36 @@ object fastColoring extends Serializable {
     //Return the iteration counter and the maxCounter
     (iterationCounter, currentMaxColor)
   }
+}
+
+object testFCKryro extends App {
+
+  import gen.verifyTestSuite
+
+  val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
+  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+  conf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+  //conf.set("spark.kryo.registrationRequired", "true")
+
+  //.set("spark.checkpoint.compress", "true")
+  val sc = new SparkContext(conf)
+  sc.setLogLevel("OFF")
+
+  var n = 3
+  var t = 2
+  var v = 2
+
+  import cmdlineparser.TSPARK.compressRuns
+  compressRuns = false
+  val tests = distributed_fastcoloring(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
+
+  println("We have " + tests.size + " tests")
+  println("Printing the tests....")
+  tests foreach (utils.print_helper(_))
+
+  println("\n\nVerifying test suite ... ")
+  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
 
 
 }
+

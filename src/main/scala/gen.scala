@@ -999,7 +999,6 @@ object test4 extends App {
 object test5 extends App {
 
   import gen.verifyTestSuite
-
   import fastColoring.fastColoring.distributed_fastcoloring
 
   val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
@@ -1011,8 +1010,8 @@ object test5 extends App {
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 10
-  var t = 7
+  var n = 3
+  var t = 2
   var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
