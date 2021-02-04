@@ -126,16 +126,23 @@ object fastColoringBitSetSpark extends Serializable {
       }
 
       val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
-
+      val eee = r1.count()
       //On debug ce qu'on a
       //val eee = r1.count()
       //println("Debug de l'adj list")
       //r1.collect().sortBy(_._1).foreach(  e => println(s"${e._1} ${e._2.toString}"))
 
       //Use KP when the graph is sparse (not dense)
-      val arr = r1.collect().sortBy(_._1)
 
-      val r2 = ordercoloring(colors, arr, i, maxColor)
+      val r2 = if (algorithm == "KP") {
+        println("Using the Knights & Peasants algorithm to color the graph...")
+        progressiveKP(colors, r1, r1.count().toInt, maxColor, sc)
+      }
+      else {
+        println("Using the Order Coloring algorithm to color the graph...")
+        val arr = r1.collect().sortBy(_._1)
+        ordercoloring(colors, arr, i, maxColor)
+      }
 
       if (debug == true) {
         println("On imprime le tableau des couleurs après coloriage du chunk par OrderColoring")
@@ -515,6 +522,119 @@ object fastColoringBitSetSpark extends Serializable {
 
 
   /**
+    * We will modify the colors array.
+    * This function returns when the K&P algorithm has colored all new vertices.
+    *
+    * The adjmatrix can be a RDD or an Array.
+    * Ideally, we are using an adjmatrix that spans the whole cluster. This is a more effective way to use
+    * all the RAM of the cluster.
+    *
+    * We can remove vertices when they are colored.
+    *
+    * @return
+    */
+  def progressiveKP(colors: Array[Int], adjMatrix: RDD[(Long, BitSet)], remaining: Int,
+                    maxColor: Int, sc: SparkContext) = {
+
+
+    var iterationCounter = 1
+    var currentMaxColor = maxColor
+    var remainingToBeColored = remaining
+    var rdd = adjMatrix
+
+    loop
+
+    def loop(): Unit = {
+      while (true) {
+
+        //The main exit condition. We have colored everything.
+        if (remainingToBeColored <= 0) return
+
+        // println(s"Iteration $iterationCounter ")
+        //Broadcast the list of colors we need from the driver program
+        val colors_bcast = sc.broadcast(colors)
+
+        //From an adjmatrix RDD, produce a RDD of colors
+        //We can either become a color, or stay the same.
+        var colorsRDD = rdd.flatMap(elem => {
+
+          val thisId = elem._1.toInt
+          val adjlist = elem._2
+          val colors = colors_bcast.value
+          var betterPeasant = false
+          var c = 0 //the color we find for this guy
+
+          val neighborcolors = new Array[Int](currentMaxColor + 2)
+
+          //First, check if the node is a peasant. If it is, we can continue working
+          //Otherwise, if the node is a knight (the node has a color), we stop working right away.
+          if (colors(thisId) == 0) { //this node is a peasant
+
+            //First answer the following question : Can we become a knight in this iteration?
+            //For this, we have to have the best tiebreaker. To check for this, we look at our adjlist.
+            //If we find an earlier peasant that we are connected to, then we have to wait. If it's a knight and not a peasant, we are fine.
+            //To check for peasants, we go through our adjlist from a certain i to a certain j
+
+            //Batch iteration through the neighbors of this guy
+            //Ok, on itere sur tous les bits. Il faut arrêter avant
+            loop3; def loop3():Unit = {
+              while (true) {
+                for (elem <- adjlist.iterator) {
+                  if (elem >= thisId) return
+                  val neighbor = elem
+                  val neighborColor = colors(neighbor)
+                  neighborcolors(neighborColor) = 1
+                  if (neighborColor == 0) {
+                    betterPeasant = true
+                    return
+                  }
+                }
+              }
+            }
+
+            //We can become a knight here
+            if (betterPeasant == false) {
+              c = color(neighborcolors)
+            }
+          } //fin du if this node is a peasant
+
+          //Return the id and the color. If no color was found return None?
+          if (c != 0) {
+            Some(thisId, c)
+          }
+          else None
+        }) //fin du map
+
+        //Unpersist the colors broadcast data structrure
+        colors_bcast.unpersist(false)
+
+        //Every vertex we have colored, we mark it in the colors data structure.
+        //We also filter out the vertices that don't improve to a knight
+        //val results = colorsRDD.collect().map(e => e.get)
+        val results = colorsRDD.collect()
+
+        //Update the colors structure, and update the maximum color at the same time
+        results.foreach(elem => {
+          colors(elem._1) = elem._2
+          remainingToBeColored -= 1
+          if (elem._2 > currentMaxColor) currentMaxColor = elem._2
+        })
+
+        iterationCounter += 1
+
+      } //while true loop here
+    } //def loop here
+
+    iterationCounter -= 1
+    //println(s"colored the chunk in $iterationCounter iterations")
+
+    //Return the iteration counter and the maxCounter
+    (iterationCounter, currentMaxColor)
+  }
+
+
+
+  /**
     * The distributed graph coloring algorithm with the fast coloring construction algorithm
     *
     * @param n
@@ -545,8 +665,8 @@ object fastColoringBitSetSpark extends Serializable {
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
 
-    pw.append(s"$t;$n;$v;FASTCOLORING_BITSET;$time_elapsed;${tests.size}\n")
-    println(s"$t;$n;$v;FASTCOLORING_BITSET;$time_elapsed;${tests.size}\n")
+    pw.append(s"$t;$n;$v;FASTCOLORING_BITSET;algorithm=$algorithm;$time_elapsed;${tests.size}\n")
+    println(s"$t;$n;$v;FASTCOLORING_BITSET;algorithm=$algorithm;$time_elapsed;${tests.size}\n")
     pw.flush()
 
     //If the option to save to a text file is activated
@@ -572,13 +692,13 @@ object testBitSetSpark extends App {
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 8
-  var t = 7
-  var v = 4
+  var n = 100
+  var t = 2
+  var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 40000, "OC") //4000 pour 100 2 2
+  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 40000, "KP") //4000 pour 100 2 2
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")

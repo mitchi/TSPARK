@@ -15,7 +15,6 @@ import Console._
 object TSPARK {
 
   var useKryo = false
-
   var save = false //global variable. Other functions import this
   var logLevelError = true
   var compressRuns = false //global variable, imported and used by Distributed Coloring
@@ -277,6 +276,10 @@ object TSPARK {
           sc.setLogLevel("ERROR")
     }
 
+    //A utiliser absolument pour OrderColoring
+    println("Setting spark.driver.maxResultSize to 0")
+    sc.getConf.set("spark.driver.maxResultSize", "10g")
+
     if (useKryo == true) {
       println("Using the Kryo Serializer...")
       println("Using a Custom registrator for Kryro for Roaring bitmaps")
@@ -285,7 +288,7 @@ object TSPARK {
       sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
       sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
       sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
-      sc.getConf.set("spark.driver.maxResultSize", "0")
+
       sc.getConf.set("spark.kryo.unsafe", "true") //default false
 
       sc.getConf.set("spark.broadcast.compress", "false")
@@ -300,7 +303,10 @@ object TSPARK {
     println(s"Printing sc.resources : ${sc.resources}")
     println(s"Printing sc.deploymode : ${sc.deployMode}")
     println(s"Printing sc.defaultParallelism : ${sc.defaultParallelism}")
-
+    println(s"Printing spark.driver.maxResultSize : ${sc.getConf.getOption("spark.driver.maxResultSize")}")
+    println(s"Printing spark.driver.memory : ${sc.getConf.getOption("spark.driver.memory")}")
+    println(s"Printing spark.executor.memory : ${sc.getConf.getOption("spark.executor.memory")}")
+    println(s"Printing spark.serializer : ${sc.getConf.getOption("spark.serializer")}")
 
     println(s"Printing sc.conf : ${sc.getConf}")
     //println(s"Printing spark.conf : ${spark.conf}")
