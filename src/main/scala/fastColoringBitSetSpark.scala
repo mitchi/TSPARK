@@ -62,7 +62,7 @@ object fastColoringBitSetSpark extends Serializable {
       else None
     }).collect()
 
-    utils.print_helper(firstCombo(0)._1)
+    //utils.print_helper(firstCombo(0)._1)
 
     println("On ajoute l'info du premier combo dans le tableau, et tableau etoiles")
     tableau = addToTableau(tableau, firstCombo, n, v)
@@ -91,19 +91,12 @@ object fastColoringBitSetSpark extends Serializable {
       val sizeOfChunk = someCombos.size
       println(s"Currently working with a chunk of the graph with $sizeOfChunk vertices.")
 
-      //val filteredCombos = filterBig(combosNumbered, i, sizeOfChunk)
-
       //Calculate the biggest ID in the chunk
       val biggestID = i + sizeOfChunk - 1
 
-
       println("Adding the entries of the chunk to the tableau...")
-
-      if (i != 1) {
-        println("Growing the tables right now...")
-        growTables(tableau, etoiles, biggestID, n, v)
-      }
-
+      println("Growing the tables right now...")
+      growTables(tableau, etoiles, biggestID, n, v)
 
       tableau = addToTableau(tableau, someCombos, n, v)
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
@@ -135,9 +128,9 @@ object fastColoringBitSetSpark extends Serializable {
       val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
 
       //On debug ce qu'on a
-      val eee = r1.count()
-      println("Debug de l'adj list")
-      r1.collect().sortBy(_._1).foreach(  e => println(s"${e._1} ${e._2.toString}"))
+      //val eee = r1.count()
+      //println("Debug de l'adj list")
+      //r1.collect().sortBy(_._1).foreach(  e => println(s"${e._1} ${e._2.toString}"))
 
       //Use KP when the graph is sparse (not dense)
       val arr = r1.collect().sortBy(_._1)
@@ -199,16 +192,16 @@ object fastColoringBitSetSpark extends Serializable {
                         list: BitSet,
                         etoiles: BitSet) = {
 
-    println(s"L: $list")
-    println(s"E: $etoiles")
+   // if (debug == true) println(s"L: $list")
+    //if (debug == true) println(s"E: $etoiles")
 
     val possiblyValidGuys = list | etoiles
 
-    println(s"|: $possiblyValidGuys")
+    //if (debug == true) println(s"|: $possiblyValidGuys")
 
     possiblyValidGuys.xor1()
 
-    println(s"^: $possiblyValidGuys")
+    //if (debug == true)println(s"^: $possiblyValidGuys")
 
     possiblyValidGuys
   }
@@ -230,13 +223,13 @@ object fastColoringBitSetSpark extends Serializable {
     var i = 0 //quel paramètre?
     var certifiedInvalidGuys = new BitSet(id.toInt)
 
-    println("Combo is " + utils.print_helper(combo) + s" id is $id")
+    if (debug == true) println("Combo is " + utils.print_helper(combo) + s" id is $id")
 
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
 
-      println(s"i=$i, value is $it")
-       if (it == '*') println("*, we skip")
+//      println(s"i=$i, value is $it")
+//       if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -255,7 +248,7 @@ object fastColoringBitSetSpark extends Serializable {
 
     //On retourne cette liste, qui contient au maximum chunkSize éléments
     //Il faut ajuster la valeur des éléments de cette liste pour les id du chunk
-    println(s"F: $certifiedInvalidGuys ")
+    //println(s"F: $certifiedInvalidGuys ")
     certifiedInvalidGuys
 
   }
@@ -417,27 +410,27 @@ object fastColoringBitSetSpark extends Serializable {
                  biggestId : Int, n : Int, v : Int) = {
 
 
-    println("Growing the tables...")
-    println(s"Biggest id is $biggestId")
+    //println("Growing the tables...")
+    //println(s"Biggest id is $biggestId")
 
 
-    println("Growing table of stars...")
+    //println("Growing table of stars...")
     //On fait les étoiles
     for (i <- 0 until n) {
-      println(s"Growing parameter=$i")
-      println("B: "+ etoiles(i))
+     // println(s"Growing parameter=$i")
+     // println("B: "+ etoiles(i))
       etoiles(i) = BitSet.expandBitSet(etoiles(i), biggestId)
-      println("A: "+ etoiles(i))
+    //  println("A: "+ etoiles(i))
     }
 
-    println("Growing table of values...")
+   // println("Growing table of values...")
     //On fait les valeurs
     for (i <- 0 until n) {
      // tableau(i) = new Array[BitSet](v)
       for (v <- 0 until v) {
-        println("B: "+ tableau(i)(v))
+       // println("B: "+ tableau(i)(v))
         tableau(i)(v) = BitSet.expandBitSet(tableau(i)(v), biggestId)
-        println("A: "+ tableau(i)(v))
+        //println("A: "+ tableau(i)(v))
       }
     }
   }
@@ -475,17 +468,18 @@ object fastColoringBitSetSpark extends Serializable {
       val id = adjMatrix(j)._1
       val bitset = adjMatrix(j)._2
 
-      println(s"Coloring $id...")
+     // println(s"Coloring $id...")
 
       //Ok, on itere sur tous les bits. Il faut arrêter avant
       loop2; def loop2():Unit = {
-        for (elem <- bitset.iterator) {
-          if (elem >= id) return
-          val neighbor = elem
-          val neighborColor = colors(neighbor)
-          neighborcolors(neighborColor) = 1
+        while (true) {
+          for (elem <- bitset.iterator) {
+            if (elem >= id) return
+            val neighbor = elem
+            val neighborColor = colors(neighbor)
+            neighborcolors(neighborColor) = 1
+          }
         }
-        loop2
       }
 
       val foundColor = color(neighborcolors)
@@ -574,18 +568,17 @@ object testBitSetSpark extends App {
 
   import gen.verifyTestSuite
 
-  val conf = new SparkConf().setMaster("local[1]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "0")
-
+  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "0")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 3
-  var t = 2
-  var v = 2
+  var n = 8
+  var t = 7
+  var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 4, "OC") //4000 pour 100 2 2
+  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 40000, "OC") //4000 pour 100 2 2
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")

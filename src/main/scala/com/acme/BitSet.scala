@@ -356,7 +356,7 @@ object BitSet {
 
   //Expand the current Bitset
   def expandBitSet(a: BitSet, newBits : Int) = {
-    val bb = new BitSet(newBits)
+    val bb = new BitSet(newBits+64)
     Array.copy(a.words, 0, bb.words, 0, a.words.length)
     bb
   }
