@@ -17,7 +17,7 @@ import com.acme.BitSet
 
 object fastColoringBitSetSpark extends Serializable {
 
-  var debug = true
+  var debug = false
 
   /**
     *
@@ -98,7 +98,13 @@ object fastColoringBitSetSpark extends Serializable {
 
 
       println("Adding the entries of the chunk to the tableau...")
-      growTables(tableau, etoiles, biggestID, n, v)
+
+      if (i != 1) {
+        println("Growing the tables right now...")
+        growTables(tableau, etoiles, biggestID, n, v)
+      }
+
+
       tableau = addToTableau(tableau, someCombos, n, v)
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
 
@@ -129,11 +135,13 @@ object fastColoringBitSetSpark extends Serializable {
       val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
 
       //On debug ce qu'on a
-      //println("Debug de l'adj list")
-      //r1.collect().foreach(  e => println(s"${e._1} ${e._2.toString}"))
+      val eee = r1.count()
+      println("Debug de l'adj list")
+      r1.collect().sortBy(_._1).foreach(  e => println(s"${e._1} ${e._2.toString}"))
 
       //Use KP when the graph is sparse (not dense)
       val arr = r1.collect().sortBy(_._1)
+
       val r2 = ordercoloring(colors, arr, i, maxColor)
 
       if (debug == true) {
@@ -176,7 +184,11 @@ object fastColoringBitSetSpark extends Serializable {
 
 
   /**
-    * Generate the list of impossible combos by "investing" the list of possible combos, and also using the list of combos with stars
+    * Generate the list of impossible combos by "investing" the list of possible combos,
+    * and also using the list of combos with stars
+    *
+    * On génère la liste des combos qui seront adjacents dans le graphe, en prenant la liste des étoiles, et la liste des
+    * possiblement valides.
     *
     * @param id
     * @param list
@@ -186,14 +198,17 @@ object fastColoringBitSetSpark extends Serializable {
   def generateOtherList(id: Long,
                         list: BitSet,
                         etoiles: BitSet) = {
-    //On construit une lookup table avec la liste des bons combos
-    //La liste est exactement de la taille du id
-    //var xortable = BitSet(id.toInt)
-    //xortable.setUntil(id.toInt)
 
-    //Valid guys =
+    println(s"L: $list")
+    println(s"E: $etoiles")
+
     val possiblyValidGuys = list | etoiles
+
+    println(s"|: $possiblyValidGuys")
+
     possiblyValidGuys.xor1()
+
+    println(s"^: $possiblyValidGuys")
 
     possiblyValidGuys
   }
@@ -215,13 +230,13 @@ object fastColoringBitSetSpark extends Serializable {
     var i = 0 //quel paramètre?
     var certifiedInvalidGuys = new BitSet(id.toInt)
 
-    //println("Combo is " + utils.print_helper(combo) + s" id is $id")
+    println("Combo is " + utils.print_helper(combo) + s" id is $id")
 
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
 
-      //println(s"i=$i, value is $it")
-      // if (it == '*') println("*, we skip")
+      println(s"i=$i, value is $it")
+       if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -230,17 +245,17 @@ object fastColoringBitSetSpark extends Serializable {
         val invalids = generateOtherList(id, list, listEtoiles)
 
         //On ajoute dans la grosse liste des invalides
-        //certifiedInvalidGuys.or(invalids)
         certifiedInvalidGuys = certifiedInvalidGuys | (invalids)
+
 
       }
       //On va chercher la liste des combos qui ont ce paramètre-valeur
       i += 1
     }
 
-
     //On retourne cette liste, qui contient au maximum chunkSize éléments
     //Il faut ajuster la valeur des éléments de cette liste pour les id du chunk
+    println(s"F: $certifiedInvalidGuys ")
     certifiedInvalidGuys
 
   }
@@ -279,6 +294,9 @@ object fastColoringBitSetSpark extends Serializable {
       if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
         val adjlist = comboToADJ(id, combo._1, tableau_bcast.value, etoiles_bcast.value)
+
+        //La liste est de taille minimum, 64 bits
+
         Some(combo._2, adjlist)
       }
       else {
@@ -345,6 +363,33 @@ object fastColoringBitSetSpark extends Serializable {
   }
 
 
+  /**
+    * On recoit un tableau, et on ajoute l'information avec le chunk de combos
+    * On ajoute sans cesse dans le tableau
+    *
+    * @param chunk
+    * @param n
+    * @param v
+    */
+  def addToTableau(tableau: Array[Array[BitSet]],
+                   chunk: Array[(Array[Char], Long)], n: Int, v: Int)= {
+
+    //On remplit cette structure avec notre chunk
+    for (combo <- chunk) { //pour chaque combo
+      for (i <- 0 until n) { //pour chaque paramètre
+        val cc = combo._1(i)
+        if (cc != '*') {
+          val vv = combo._1(i) - '0' //on va chercher la valeur
+          tableau(i)(vv) set combo._2.toInt //on ajoute dans le ArrayBuffer . On pourrait mettre l'index global aussi.mmm
+        }
+      }
+    }
+
+    //On retourne notre travail
+    tableau
+  }
+
+
   def addTableauEtoiles(etoiles: Array[BitSet],
                         chunk: Array[(Array[Char], Long)], n: Int, v: Int) = {
 
@@ -371,48 +416,30 @@ object fastColoringBitSetSpark extends Serializable {
   def growTables(tableau: Array[Array[BitSet]], etoiles: Array[BitSet],
                  biggestId : Int, n : Int, v : Int) = {
 
+
+    println("Growing the tables...")
+    println(s"Biggest id is $biggestId")
+
+
+    println("Growing table of stars...")
     //On fait les étoiles
     for (i <- 0 until n) {
+      println(s"Growing parameter=$i")
+      println("B: "+ etoiles(i))
       etoiles(i) = BitSet.expandBitSet(etoiles(i), biggestId)
+      println("A: "+ etoiles(i))
     }
 
+    println("Growing table of values...")
     //On fait les valeurs
     for (i <- 0 until n) {
      // tableau(i) = new Array[BitSet](v)
       for (v <- 0 until v) {
-        tableau(i)(v) = BitSet.expandBitSet(etoiles(i), biggestId)
+        println("B: "+ tableau(i)(v))
+        tableau(i)(v) = BitSet.expandBitSet(tableau(i)(v), biggestId)
+        println("A: "+ tableau(i)(v))
       }
     }
-
-  }
-
-
-
-  /**
-    * On recoit un tableau, et on ajoute l'information avec le chunk de combos
-    * On ajoute sans cesse dans le tableau
-    *
-    * @param chunk
-    * @param n
-    * @param v
-    */
-  def addToTableau(tableau: Array[Array[BitSet]],
-                   chunk: Array[(Array[Char], Long)], n: Int, v: Int)= {
-
-
-    //On remplit cette structure avec notre chunk
-    for (combo <- chunk) { //pour chaque combo
-      for (i <- 0 until n) { //pour chaque paramètre
-        val cc = combo._1(i)
-        if (cc != '*') {
-          val vv = combo._1(i) - '0' //on va chercher la valeur
-          tableau(i)(vv) set combo._2.toInt //on ajoute dans le ArrayBuffer . On pourrait mettre l'index global aussi.mmm
-        }
-      }
-    }
-
-    //On retourne notre travail
-    tableau
   }
 
 
@@ -445,12 +472,20 @@ object fastColoringBitSetSpark extends Serializable {
       val neighborcolors = new Array[Int](currentMaxColor + 2)
 
       //Batch iteration through the neighbors of this guy
+      val id = adjMatrix(j)._1
       val bitset = adjMatrix(j)._2
 
-      for (elem <- bitset.iterator) {
-        val neighbor = elem
-        val neighborColor = colors(neighbor)
-        neighborcolors(neighborColor) = 1
+      println(s"Coloring $id...")
+
+      //Ok, on itere sur tous les bits. Il faut arrêter avant
+      loop2; def loop2():Unit = {
+        for (elem <- bitset.iterator) {
+          if (elem >= id) return
+          val neighbor = elem
+          val neighborColor = colors(neighbor)
+          neighborcolors(neighborColor) = 1
+        }
+        loop2
       }
 
       val foundColor = color(neighborcolors)
@@ -539,11 +574,8 @@ object testBitSetSpark extends App {
 
   import gen.verifyTestSuite
 
-  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "0")
+  val conf = new SparkConf().setMaster("local[1]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "0")
 
-
-
-  //.set("spark.checkpoint.compress", "true")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 

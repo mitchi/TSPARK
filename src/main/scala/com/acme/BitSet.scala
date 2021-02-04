@@ -32,6 +32,52 @@ class BitSet(numBits: Int) extends Serializable {
    val words = new Array[Long](bit2words(numBits))
    val numWords = words.length
 
+
+
+  /**
+    * Printing the bitset in compact form
+    * Marche parfaitement maintenant
+    * @return
+    */
+  override def toString: String =
+  {
+    var output = "    "
+    var j = 0
+
+    val it = this.iterator
+
+    for (i <- it) {
+      while (j != i) {
+        output += "0 "
+        j+=1
+      }
+      if (j == i) {
+        output+="1 "
+        j+=1
+      }
+
+    }
+
+    output += s" capacity:$capacity"
+    output
+  }
+
+
+  /**
+    * Printing the bitset in compact form
+    * @return
+    */
+   def toString4: String =
+  {
+      var output = ""
+      val it = this.iterator
+      for (i <- it) {
+        output += i
+      }
+      output
+  }
+
+
   /**
     * Printing the bitset in compact form
     * @return
@@ -52,34 +98,34 @@ class BitSet(numBits: Int) extends Serializable {
   }
 
 
-  /**
-    * Printing the array in "bits" form 0 1 0 1 0 1 etc...
-    * @return
-    */
-  override def toString: String =
-  {
-    var output = "       "
-    var j = 0
-    var i = this.nextSetBit(0)
-
-    def printzeroes(): Unit = {
-      while(j != i) {
-        output += "0 "
-        j +=1
-      }
-    }
-
-    loop; def loop(): Unit = {
-    if (i == -1) return
-    printzeroes()
-    output+= "1 "
-    i = this.nextSetBit(i+1)
-    loop
-  }
-
-    output += s" capacity:$capacity"
-    output
-  }
+//  /**
+//    * Printing the array in "bits" form 0 1 0 1 0 1 etc...
+//    * @return
+//    */
+//  override def toString: String =
+//  {
+//    var output = "       "
+//    var j = 0
+//    var i = this.nextSetBit(0)
+//
+//    def printzeroes(): Unit = {
+//      while(j != i) {
+//        output += "0 "
+//        j +=1
+//      }
+//    }
+//
+//    loop; def loop(): Unit = {
+//    if (i == -1) return
+//    printzeroes()
+//    output+= "1 "
+//    i = this.nextSetBit(i+1)
+//    loop
+//  }
+//
+//    output += s" capacity:$capacity"
+//    output
+//  }
 
   /**
     * Compute the capacity (number of bits) that can be represented
@@ -244,7 +290,6 @@ class BitSet(numBits: Int) extends Serializable {
       tmp
     }
   }
-
 
   /** Return the number of bits set to true in this BitSet. */
   def cardinality(): Int = {
