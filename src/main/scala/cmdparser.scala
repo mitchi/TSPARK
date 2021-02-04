@@ -282,6 +282,18 @@ object TSPARK {
     sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
     sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
     sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
+    sc.getConf.set("spark.driver.maxResultSize", "0")
+    sc.getConf.set("spark.kryo.unsafe", "true") //default false
+
+
+    sc.getConf.set("spark.memory.offHeap.enabled", "true") //default false
+    sc.getConf.set("spark.memory.offHeap.size", "10g") //default false
+
+
+
+
+    sc.getConf.set("spark.broadcast.compress", "false")
+    sc.getConf.set("spark.checkpoint.compress", "true")
 
     //val spark = SparkSession.builder.appName("TSPARK").getOrCreate() //on recupere le spark du cluster
 

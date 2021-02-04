@@ -171,6 +171,12 @@ object fastColoringBitSet extends Serializable {
 
     var lookuptable = BitSet(id.toInt)
 
+//    var xortable = BitSet()
+//    (0 until id).foreach( e => xortable.add(_)
+
+   // lookuptable.|=(list)
+   // lookuptable.|=(etoiles)
+
 
 //    var lookuptable = new Array[Byte](id.toInt)
 //    lookuptable = lookuptable.map( e => 0.toByte)
@@ -219,13 +225,8 @@ object fastColoringBitSet extends Serializable {
     var i = 0 //quel paramètre?
     var certifiedInvalidGuys = BitSet()
 
-    //println("Combo is " + utils.print_helper(combo) + s" id is $id")
-
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
-
-      //println(s"i=$i, value is $it")
-      // if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -233,8 +234,6 @@ object fastColoringBitSet extends Serializable {
         val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
         val invalids = generateOtherList(id, list, listEtoiles)
 
-        //On ajoute dans la grosse liste des invalides
-        //certifiedInvalidGuys.or(invalids)
         certifiedInvalidGuys.|=(invalids)
 
       }
@@ -531,9 +530,9 @@ object testBitSetColoring extends App {
   import fastColoringBitSet.fastcoloring_bitset
 
   val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK FastColoring BitSet").set("spark.driver.maxResultSize", "0")
-  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
-  conf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
-  conf.set("spark.kryoserializer.buffer.max", "2047m")
+//  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+//  conf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+//  conf.set("spark.kryoserializer.buffer.max", "2047m")
 
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")

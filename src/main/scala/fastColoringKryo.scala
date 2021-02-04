@@ -13,6 +13,7 @@ import progressivecoloring.progressive_coloring.assign_numberClauses
 
 import scala.util.Random
 import ordercoloring.OrderColoring.coloringToTests
+import org.apache.spark.storage.StorageLevel.{MEMORY_ONLY_SER, OFF_HEAP}
 import org.roaringbitmap.RoaringBitmap
 
 object fastColoring extends Serializable {
@@ -45,7 +46,7 @@ object fastColoring extends Serializable {
     println("Shuffling and numbering the clauses is complete")
 
     //We no longer need the not-numbered combos
-    combos.unpersist(false)
+    //mycombos.unpersist(false)
 
     //Before everything, we can color the first vertex with the color 1
     var maxColor = 1
@@ -95,7 +96,7 @@ object fastColoring extends Serializable {
       tableau = addToTableau(tableau, someCombos, n, v)
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
 
-      val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
+      val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).persist(MEMORY_ONLY_SER)
 
       //Use KP when the graph is sparse (not dense)
       val r2 =
@@ -631,21 +632,30 @@ object testFCKryro extends App {
   import gen.verifyTestSuite
 
   val conf = new SparkConf().setMaster("local[*]").setAppName("Roaring graph coloring").set("spark.driver.maxResultSize", "0")
-  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+  //conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
   conf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
-  //conf.set("spark.kryo.registrationRequired", "true")
+  conf.set("spark.kryo.registrationRequired", "true")
+
+  conf.set("spark.driver.maxResultSize", "0")
+  conf.set("spark.kryo.unsafe", "true") //default false
+
+  conf.set("spark.memory.offHeap.enabled", "true") //default false
+  conf.set("spark.memory.offHeap.size", "10g") //default false
+  conf.set("spark.broadcast.compress", "false")
+  conf.set("spark.checkpoint.compress", "true")
+
 
   //.set("spark.checkpoint.compress", "true")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 3
-  var t = 2
-  var v = 2
+  var n = 8
+  var t = 7
+  var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_fastcoloring(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
+  val tests = distributed_fastcoloring(n, t, v, sc, 20000, "OC") //4000 pour 100 2 2
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
