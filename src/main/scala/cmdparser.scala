@@ -14,6 +14,8 @@ import Console._
 
 object TSPARK {
 
+  var useKryo = false
+
   var save = false //global variable. Other functions import this
   var logLevelError = true
   var compressRuns = false //global variable, imported and used by Distributed Coloring
@@ -275,27 +277,21 @@ object TSPARK {
           sc.setLogLevel("ERROR")
     }
 
-    println("Using the Kryo Serializer...")
-    println("Using a Custom registrator for Kryro for Roaring bitmaps")
-    println("Using spark.kryoserializer.buffer.max=2047m")
+    if (useKryo == true) {
+      println("Using the Kryo Serializer...")
+      println("Using a Custom registrator for Kryro for Roaring bitmaps")
+      println("Using spark.kryoserializer.buffer.max=2047m")
 
-    sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
-    sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
-    sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
-    sc.getConf.set("spark.driver.maxResultSize", "0")
-    sc.getConf.set("spark.kryo.unsafe", "true") //default false
+      sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+      sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+      sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
+      sc.getConf.set("spark.driver.maxResultSize", "0")
+      sc.getConf.set("spark.kryo.unsafe", "true") //default false
 
-
-    sc.getConf.set("spark.memory.offHeap.enabled", "true") //default false
-    sc.getConf.set("spark.memory.offHeap.size", "10g") //default false
-
-
-
-
-    sc.getConf.set("spark.broadcast.compress", "false")
-    sc.getConf.set("spark.checkpoint.compress", "true")
-
-    //val spark = SparkSession.builder.appName("TSPARK").getOrCreate() //on recupere le spark du cluster
+      sc.getConf.set("spark.broadcast.compress", "false")
+      sc.getConf.set("spark.checkpoint.compress", "true")
+    }
+    else println("We are not using Kryo Serialization. Use the parameter --kryo in order to use it")
 
     println(s"Printing sc.appname : ${sc.appName}")
     println(s"Printing default partitions : ${sc.defaultMinPartitions}")
@@ -325,7 +321,7 @@ object TSPARK {
       //Implémentation de Fast Coloring
       case Some(FastColoring) => {
 
-        import fastColoringKryo.fastColoring.distributed_fastcoloring
+        import BitSetSpark.fastColoringBitSetSpark.distributed_fastcoloring_bitset_spark
 
         val n = FastColoring.n
         val t = FastColoring.t
@@ -337,7 +333,7 @@ object TSPARK {
         val algorithm = FastColoring.algorithm //Default is OC, Order Coloring
         compressRuns = FastColoring.compressRuns
 
-        val tests = distributed_fastcoloring(n, t, v, sc, chunkSize, algorithm)
+        val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, chunkSize, algorithm)
 
         //Verify the test suite (optional)
         if (verify == true) {
