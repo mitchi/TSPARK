@@ -688,17 +688,46 @@ object testBitSetSpark extends App {
 
   import gen.verifyTestSuite
 
-  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "0")
+  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")
+
+//  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+//  conf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+//  conf.set("spark.kryoserializer.buffer.max", "2047m")
+//
+//  conf.set("spark.kryo.unsafe", "true") //default false
+//
+//  conf.set("spark.broadcast.compress", "false")
+//  conf.set("spark.checkpoint.compress", "true")
+
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
 
-  var n = 100
-  var t = 2
-  var v = 2
+
+
+
+  println(s"Printing sc.appname : ${sc.appName}")
+  println(s"Printing default partitions : ${sc.defaultMinPartitions}")
+  println(s"Printing sc.master : ${sc.master}")
+  println(s"Printing sc.sparkUser : ${sc.sparkUser}")
+  println(s"Printing sc.resources : ${sc.resources}")
+  println(s"Printing sc.deploymode : ${sc.deployMode}")
+  println(s"Printing sc.defaultParallelism : ${sc.defaultParallelism}")
+  println(s"Printing spark.driver.maxResultSize : ${sc.getConf.getOption("spark.driver.maxResultSize")}")
+  println(s"Printing spark.driver.memory : ${sc.getConf.getOption("spark.driver.memory")}")
+  println(s"Printing spark.executor.memory : ${sc.getConf.getOption("spark.executor.memory")}")
+  println(s"Printing spark.serializer : ${sc.getConf.getOption("spark.serializer")}")
+
+  println(s"Printing sc.conf : ${sc.getConf}")
+  //println(s"Printing spark.conf : ${spark.conf}")
+  println(s"Printing boolean sc.islocal : ${sc.isLocal}")
+
+  var n = 9
+  var t = 7
+  var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 40000, "KP") //4000 pour 100 2 2
+  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")

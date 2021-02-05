@@ -54,6 +54,8 @@ object TSPARK {
     var v = arg[Int](name = "v",
       description = "domain size of a parameter")
 
+    var kryo = opt[Boolean](abbrev = "k", name="kryo", description = "Use Kryo serialization instead")
+
     var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Default is 20k", default = 20000)
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
@@ -279,22 +281,7 @@ object TSPARK {
     //A utiliser absolument pour OrderColoring
     println("Setting spark.driver.maxResultSize to 0")
     sc.getConf.set("spark.driver.maxResultSize", "10g")
-
-    if (useKryo == true) {
-      println("Using the Kryo Serializer...")
-      println("Using a Custom registrator for Kryro for Roaring bitmaps")
-      println("Using spark.kryoserializer.buffer.max=2047m")
-
-      sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
-      sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
-      sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
-
-      sc.getConf.set("spark.kryo.unsafe", "true") //default false
-
-      sc.getConf.set("spark.broadcast.compress", "false")
-      sc.getConf.set("spark.checkpoint.compress", "true")
-    }
-    else println("We are not using Kryo Serialization. Use the parameter --kryo in order to use it")
+    sc.getConf.set("spark.driver.memory", "10g")
 
     println(s"Printing sc.appname : ${sc.appName}")
     println(s"Printing default partitions : ${sc.defaultMinPartitions}")
@@ -332,6 +319,23 @@ object TSPARK {
         val n = FastColoring.n
         val t = FastColoring.t
         val v = FastColoring.v
+
+        useKryo = FastColoring.kryo
+
+          if (useKryo == true) {
+            println("Using the Kryo Serializer...")
+            println("Using a Custom registrator for Kryro for Roaring bitmaps")
+            println("Using spark.kryoserializer.buffer.max=2047m")
+
+            sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+            sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+            sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
+
+            sc.getConf.set("spark.kryo.unsafe", "true") //default false
+            sc.getConf.set("spark.broadcast.compress", "false")
+            sc.getConf.set("spark.checkpoint.compress", "true")
+          }
+          else println("We are not using Kryo Serialization. Use the parameter --kryo in order to use it")
 
         save = FastColoring.save
         val chunkSize = FastColoring.chunkSize
