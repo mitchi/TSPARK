@@ -1,24 +1,32 @@
-package BitSetSpark
+package withoutSpark
 
-import BitSetSpark.fastColoringBitSetSpark.distributed_fastcoloring_bitset_spark
 import central.gen
 import central.gen.{filename, verifyTestSuite}
-import cmdlineparser.TSPARK.save
-import cmdlineparser.TSPARK.compressRuns
+import cmdlineparser.TSPARK.{compressRuns, save}
+import com.acme.BitSet
 import enumerator.distributed_enumerator.fastGenCombos
+import ordercoloring.OrderColoring.coloringToTests
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
-import utils.utils
 import progressivecoloring.progressive_coloring.assign_numberClauses
+import utils.utils
+import withoutSpark.noSparkColoring.withoutSpark
 
+import scala.collection.mutable.ArrayBuffer
+import scala.collection.parallel.mutable.ParArray
 import scala.util.Random
-import ordercoloring.OrderColoring.coloringToTests
-import com.acme.BitSet
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import scala.util.{Failure, Success}
 
-object fastColoringBitSetSpark extends Serializable {
+/**
+  * On essaie de faire la même chose sans Apache Spark, pour voir les temps
+  * On utilise quand même Spark pour faire des trucs que je n'ai pas envie de recoder, mais je veux juste voir quelle genre de vitesse on peut obtenir
+  */
+
+object noSparkColoring extends Serializable {
 
   var debug = false
-
   /**
     *
     */
@@ -41,11 +49,12 @@ object fastColoringBitSetSpark extends Serializable {
     }, true)
 
     //Assign numbers to clauses using a custom algorithm
-    val combosNumbered = assign_numberClauses(mycombos, sc).cache()
+    val combosNumbered = assign_numberClauses(mycombos, sc).collect().sortBy(_._2)
     println("Shuffling and numbering the clauses is complete")
 
     //We no longer need the not-numbered combos
     combos.unpersist(false)
+    mycombos.unpersist(false)
 
     //Before everything, we can color the first vertex with the color 1
     var maxColor = 1
@@ -60,9 +69,9 @@ object fastColoringBitSetSpark extends Serializable {
     val firstCombo = combosNumbered.flatMap(e => {
       if (e._2 == 0) Some(e)
       else None
-    }).collect()
+    })
 
-    //utils.print_helper(firstCombo(0)._1)
+    utils.print_helper(firstCombo(0)._1)
 
     println("On ajoute l'info du premier combo dans le tableau, et tableau etoiles")
     tableau = addToTableau(tableau, firstCombo, n, v)
@@ -86,7 +95,7 @@ object fastColoringBitSetSpark extends Serializable {
           Some(elem)
         }
         else None
-      }).collect().sortBy(_._2)
+      })
 
       val sizeOfChunk = someCombos.size
       println(s"Currently working with a chunk of the graph with $sizeOfChunk vertices.")
@@ -96,16 +105,27 @@ object fastColoringBitSetSpark extends Serializable {
 
       println("Adding the entries of the chunk to the tableau...")
       println("Growing the tables right now...")
-      growTables(tableau, etoiles, biggestID, n, v)
 
+      //On pourrait mesurer le temps ici
+
+      val startTime = System.nanoTime()
+      growTables(tableau, etoiles, biggestID, n, v)
+      val afterGrow = System.nanoTime()
       tableau = addToTableau(tableau, someCombos, n, v)
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
+      val afterAddToTableaux = System.nanoTime()
+
+      val growTablesTime = (afterGrow -startTime ).toDouble / 1000000000
+      val addTableauxTime = (afterAddToTableaux - afterGrow  ).toDouble / 1000000000
+
+      println(s"Grow tables : $growTablesTime seconds")
+      println(s"Add tableaux time : $addTableauxTime seconds")
 
 
       if (debug == true) {
         println("On print les combos du chunk")
         for (c <- someCombos) {
-          print(c._2 + " ") ; utils.print_helper(c._1)
+          print(c._2 + " "); utils.print_helper(c._1)
         }
       }
 
@@ -125,23 +145,23 @@ object fastColoringBitSetSpark extends Serializable {
         }
       }
 
-      val r1 = generateadjlist_fastcoloring(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
-      val eee = r1.count()
-      //On debug ce qu'on a
-      //val eee = r1.count()
-      //println("Debug de l'adj list")
-      //r1.collect().sortBy(_._1).foreach(  e => println(s"${e._1} ${e._2.toString}"))
+      val r1: ParArray[(Long, BitSet)] = generateadjlist_fastcoloringFutures(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc)
 
-      //Use KP when the graph is sparse (not dense)
+      if (debug == true)println("Debug de l'adj list")
+      if (debug == true) r1.foreach(  e => println(s"${e._1} ${e._2.toString}"))
 
       val r2 = if (algorithm == "KP") {
         println("Using the Knights & Peasants algorithm to color the graph...")
-        progressiveKP(colors, r1, r1.count().toInt, maxColor, sc)
+        progressiveKP(colors, sc.makeRDD(r1.toArray), r1.size, maxColor, sc)
       }
       else {
         println("Using the Order Coloring algorithm to color the graph...")
-        val arr = r1.collect().sortBy(_._1)
-        ordercoloring(colors, arr, i, maxColor)
+        val t1 = System.nanoTime()
+        val a = ordercoloring(colors, r1.toArray, i, maxColor)
+        val t2 = System.nanoTime()
+        val time_elapsed = (t2 - t1).toDouble / 1000000000
+        println(s"Time elapsed for Order Coloring: $time_elapsed seconds")
+        a
       }
 
       if (debug == true) {
@@ -156,10 +176,7 @@ object fastColoringBitSetSpark extends Serializable {
       totalIterations += r2._1
       maxColor = r2._2
       println(s"max color is now $maxColor")
-
-      r1.unpersist(true)
       i += sizeOfChunk //1 + 10000 = 10001
-
       println(s"i is now $i")
 
       loop
@@ -170,17 +187,14 @@ object fastColoringBitSetSpark extends Serializable {
     println(s"We did a total of $totalIterations iterations, which is $percent% of total")
     println(s"We also colored $vertexPerIteration vertices per iteration on average")
 
-
     //Create tests now
-    val bcastcolors = sc.broadcast(colors)
     val properFormRDD = combosNumbered.map(elem => {
       val id = elem._2
-      val color = bcastcolors.value(id.toInt)
+      val color = colors(id.toInt)
       (color, elem._1)
     })
 
-    //Transform into tests
-    coloringToTests(properFormRDD)
+    maxColor
   }
 
 
@@ -200,7 +214,7 @@ object fastColoringBitSetSpark extends Serializable {
                         list: BitSet,
                         etoiles: BitSet) = {
 
-   // if (debug == true) println(s"L: $list")
+    // if (debug == true) println(s"L: $list")
     //if (debug == true) println(s"E: $etoiles")
 
     val possiblyValidGuys = list | etoiles
@@ -236,8 +250,8 @@ object fastColoringBitSetSpark extends Serializable {
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
 
-//      println(s"i=$i, value is $it")
-//       if (it == '*') println("*, we skip")
+      //      println(s"i=$i, value is $it")
+      //       if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -264,6 +278,7 @@ object fastColoringBitSetSpark extends Serializable {
 
   /**
     * Input: RDD de combos, tableau, etoiles. Output: un RDD de (id, adjlist) pour colorier le graphew
+    * Cette version n'utilise pas Apache Spark
     *
     * @param i
     * @param step
@@ -273,31 +288,26 @@ object fastColoringBitSetSpark extends Serializable {
     * @param sc
     * @return
     */
-  def generateadjlist_fastcoloring(i: Long, step: Long,
-                                   combos: RDD[(Array[Char], Long)],
-                                   tableau: Array[Array[BitSet]],
-                                   etoiles: Array[BitSet],
-                                   sc: SparkContext) = {
+  def generateadjlist_fastcoloringFutures(i: Long, step: Long,
+                                     combos: Array[(Array[Char], Long)],
+                                     tableau: Array[Array[BitSet]],
+                                     etoiles: Array[BitSet],
+                                     sc: SparkContext) = {
 
-    //Print the number of partitions we are using
-    val partitions = combos.getNumPartitions
+
+
     println("Generating the adjacency lists using the fast graph construction algorithm...")
-    println(s"Run compression : $compressRuns")
-    println(s"Currently using $partitions partitions")
+    println("Here, we are using Scala Futures")
 
-    val tableau_bcast = sc.broadcast(tableau)
-    val etoiles_bcast = sc.broadcast(etoiles)
+    val t1 = System.nanoTime()
 
-    val r1 = combos.flatMap(combo => {
-
-      //le id du combat. On n'a pas besoin de mettre des sommets plus gros que lui dans sa liste d'adjacence
+    val r1 = combos.par.flatMap( combo =>
+    {
       val id = combo._2
       if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
-        val adjlist = comboToADJ(id, combo._1, tableau_bcast.value, etoiles_bcast.value)
-
+        val adjlist = comboToADJ(id, combo._1, tableau, etoiles)
         //La liste est de taille minimum, 64 bits
-
         Some(combo._2, adjlist)
       }
       else {
@@ -305,30 +315,55 @@ object fastColoringBitSetSpark extends Serializable {
         None
       }
     })
-
-    tableau_bcast.unpersist(false)
-    etoiles_bcast.unpersist(false)
-
+    val t2 = System.nanoTime()
+    val time_elapsed = (t2 - t1).toDouble / 1000000000
+    println(s"Time to create all adj lists: $time_elapsed seconds")
     r1
   }
 
 
+
   /**
-    * On filtre les combos du RDD, comme ça on travaille pas avec les combos qui sont pas dans le chunk
+    * Input: RDD de combos, tableau, etoiles. Output: un RDD de (id, adjlist) pour colorier le graphew
+    * Cette version n'utilise pas Apache Spark
     *
-    * @param combos
     * @param i
     * @param step
+    * @param combos
+    * @param tableau
+    * @param etoiles
+    * @param sc
     * @return
     */
-  def filterBig(combos: RDD[(Array[Char], Long)], i: Int, step: Int):
-  RDD[(Array[Char], Long)] = {
-    combos.flatMap(e => {
-      if (e._2 > i + step) None
-      else Some(e)
-    })
-  }
+  def generateadjlist_fastcoloringST(i: Long, step: Long,
+                                   combos: Array[(Array[Char], Long)],
+                                   tableau: Array[Array[BitSet]],
+                                   etoiles: Array[BitSet],
+                                   sc: SparkContext) = {
 
+    println("Generating the adjacency lists using the fast graph construction algorithm...")
+
+    val t1 = System.nanoTime()
+
+    val r1 = combos.flatMap( combo =>
+    {
+        val id = combo._2
+        if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
+          //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
+          val adjlist = comboToADJ(id, combo._1, tableau, etoiles)
+          //La liste est de taille minimum, 64 bits
+          Some(combo._2, adjlist)
+        }
+        else {
+          //println("Not calculing adjlist for first combo")
+          None
+        }
+      })
+    val t2 = System.nanoTime()
+    val time_elapsed = (t2 - t1).toDouble / 1000000000
+    println(s"Time to create all adj lists: $time_elapsed seconds")
+    r1
+  }
 
   /**
     * On crée le tableau qu'on va utiliser.
@@ -373,7 +408,7 @@ object fastColoringBitSetSpark extends Serializable {
     * @param v
     */
   def addToTableau(tableau: Array[Array[BitSet]],
-                   chunk: Array[(Array[Char], Long)], n: Int, v: Int)= {
+                   chunk: Array[(Array[Char], Long)], n: Int, v: Int) = {
 
     //On remplit cette structure avec notre chunk
     for (combo <- chunk) { //pour chaque combo
@@ -408,6 +443,7 @@ object fastColoringBitSetSpark extends Serializable {
 
   /**
     * On fait grossir nos BitSets
+    *
     * @param tableau
     * @param etoiles
     * @param biggestId
@@ -415,7 +451,7 @@ object fastColoringBitSetSpark extends Serializable {
     * @param v
     */
   def growTables(tableau: Array[Array[BitSet]], etoiles: Array[BitSet],
-                 biggestId : Int, n : Int, v : Int) = {
+                 biggestId: Int, n: Int, v: Int) = {
 
 
     //println("Growing the tables...")
@@ -425,24 +461,23 @@ object fastColoringBitSetSpark extends Serializable {
     //println("Growing table of stars...")
     //On fait les étoiles
     for (i <- 0 until n) {
-     // println(s"Growing parameter=$i")
-     // println("B: "+ etoiles(i))
+      // println(s"Growing parameter=$i")
+      // println("B: "+ etoiles(i))
       etoiles(i) = BitSet.expandBitSet(etoiles(i), biggestId)
-    //  println("A: "+ etoiles(i))
+      //  println("A: "+ etoiles(i))
     }
 
-   // println("Growing table of values...")
+    // println("Growing table of values...")
     //On fait les valeurs
     for (i <- 0 until n) {
-     // tableau(i) = new Array[BitSet](v)
+      // tableau(i) = new Array[BitSet](v)
       for (v <- 0 until v) {
-       // println("B: "+ tableau(i)(v))
+        // println("B: "+ tableau(i)(v))
         tableau(i)(v) = BitSet.expandBitSet(tableau(i)(v), biggestId)
         //println("A: "+ tableau(i)(v))
       }
     }
   }
-
 
   /**
     * Color N vertices at a time using the Order Coloring algorithm.
@@ -476,10 +511,11 @@ object fastColoringBitSetSpark extends Serializable {
       val id = adjMatrix(j)._1
       val bitset = adjMatrix(j)._2
 
-     // println(s"Coloring $id...")
+      // println(s"Coloring $id...")
 
       //Ok, on itere sur tous les bits. Il faut arrêter avant
-      loop2; def loop2():Unit = {
+      loop2;
+      def loop2(): Unit = {
         while (true) {
           for (elem <- bitset.iterator) {
             if (elem >= id) return
@@ -578,7 +614,8 @@ object fastColoringBitSetSpark extends Serializable {
 
             //Batch iteration through the neighbors of this guy
             //Ok, on itere sur tous les bits. Il faut arrêter avant
-            loop3; def loop3():Unit = {
+            loop3;
+            def loop3(): Unit = {
               while (true) {
                 for (elem <- adjlist.iterator) {
                   if (elem >= thisId) return
@@ -634,7 +671,6 @@ object fastColoringBitSetSpark extends Serializable {
   }
 
 
-
   /**
     * The distributed graph coloring algorithm with the fast coloring construction algorithm
     *
@@ -644,8 +680,8 @@ object fastColoringBitSetSpark extends Serializable {
     * @param sc
     * @return
     */
-  def distributed_fastcoloring_bitset_spark(n: Int, t: Int, v: Int, sc: SparkContext,
-                                      chunkSize: Int = 4000, algorithm: String = "OC"): Array[Array[Char]] = {
+  def withoutSpark(n: Int, t: Int, v: Int, sc: SparkContext,
+                                            chunkSize: Int = 4000, algorithm: String = "OC"): Int = {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
@@ -661,50 +697,29 @@ object fastColoringBitSetSpark extends Serializable {
 
     val t1 = System.nanoTime()
 
-    val tests = fastcoloring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, n, v, algorithm)
+    val maxColor = fastcoloring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, n, v, algorithm)
 
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
 
-    pw.append(s"$t;$n;$v;FASTCOLORING_BITSET;algorithm=$algorithm;$time_elapsed;${tests.size}\n")
-    println(s"$t;$n;$v;FASTCOLORING_BITSET;algorithm=$algorithm;$time_elapsed;${tests.size}\n")
+    pw.append(s"$t;$n;$v;WITHOUTSPARK;algorithm=$algorithm;$time_elapsed;$maxColor\n")
+    println(s"$t;$n;$v;WITHOUTSPARK;algorithm=$algorithm;$time_elapsed;$maxColor\n")
     pw.flush()
 
-    //If the option to save to a text file is activated
-    if (save == true) {
-      println(s"Saving the test suite to a file named $t;$n;$v.txt")
-      //Save the test suite to file
-      utils.saveTestSuite(s"$t;$n;$v.txt", tests)
-    }
-
     //Return the test suite
-    tests
+    maxColor
   }
-
-
 }
 
-
-object testBitSetSpark extends App {
+object testWithoutSpark extends App {
 
   import gen.verifyTestSuite
 
-  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")
-
-//  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
-//  conf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
-//  conf.set("spark.kryoserializer.buffer.max", "2047m")
-//
-//  conf.set("spark.kryo.unsafe", "true") //default false
-//
-//  conf.set("spark.broadcast.compress", "false")
-//  conf.set("spark.checkpoint.compress", "true")
-
+  val conf = new SparkConf().setMaster("local[*]").
+    setAppName("Without Spark")
+    .set("spark.driver.maxResultSize", "10g")
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
-
-
-
 
   println(s"Printing sc.appname : ${sc.appName}")
   println(s"Printing default partitions : ${sc.defaultMinPartitions}")
@@ -717,25 +732,20 @@ object testBitSetSpark extends App {
   println(s"Printing spark.driver.memory : ${sc.getConf.getOption("spark.driver.memory")}")
   println(s"Printing spark.executor.memory : ${sc.getConf.getOption("spark.executor.memory")}")
   println(s"Printing spark.serializer : ${sc.getConf.getOption("spark.serializer")}")
-
   println(s"Printing sc.conf : ${sc.getConf}")
-  //println(s"Printing spark.conf : ${spark.conf}")
   println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
-  var n = 9
-  var t = 7
-  var v = 4
+  var n = 400
+  var t = 2
+  var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
-
-  println("We have " + tests.size + " tests")
-  println("Printing the tests....")
-  tests foreach (utils.print_helper(_))
-
-  println("\n\nVerifying test suite ... ")
-  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
+  val maxColor = withoutSpark(n, t, v, sc, 50000, "OC") //4000 pour 100 2 2
+  println("We have " + maxColor + " tests")
 
 }
+
+
+
 
