@@ -17,7 +17,7 @@ import com.acme.BitSet
 
 object fastColoringBitSetSpark extends Serializable {
 
-  var debug = false
+  var debug = true
 
   /**
     *
@@ -62,7 +62,7 @@ object fastColoringBitSetSpark extends Serializable {
       else None
     }).collect()
 
-    //utils.print_helper(firstCombo(0)._1)
+    utils.print_helper(firstCombo(0)._1)
 
     println("On ajoute l'info du premier combo dans le tableau, et tableau etoiles")
     tableau = addToTableau(tableau, firstCombo, n, v)
@@ -129,8 +129,8 @@ object fastColoringBitSetSpark extends Serializable {
       val eee = r1.count()
       //On debug ce qu'on a
       //val eee = r1.count()
-      //println("Debug de l'adj list")
-      //r1.collect().sortBy(_._1).foreach(  e => println(s"${e._1} ${e._2.toString}"))
+      println("Debug de l'adj list")
+      r1.collect().sortBy(_._1).foreach(  e => println(s"${e._1} ${e._2.toString}"))
 
       //Use KP when the graph is sparse (not dense)
 
@@ -200,16 +200,16 @@ object fastColoringBitSetSpark extends Serializable {
                         list: BitSet,
                         etoiles: BitSet) = {
 
-   // if (debug == true) println(s"L: $list")
-    //if (debug == true) println(s"E: $etoiles")
+    if (debug == true) println(s"L: $list")
+    if (debug == true) println(s"E: $etoiles")
 
     val possiblyValidGuys = list | etoiles
 
-    //if (debug == true) println(s"|: $possiblyValidGuys")
+    if (debug == true) println(s"|: $possiblyValidGuys")
 
     possiblyValidGuys.xor1()
 
-    //if (debug == true)println(s"^: $possiblyValidGuys")
+    if (debug == true)println(s"^: $possiblyValidGuys")
 
     possiblyValidGuys
   }
@@ -236,8 +236,8 @@ object fastColoringBitSetSpark extends Serializable {
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
 
-//      println(s"i=$i, value is $it")
-//       if (it == '*') println("*, we skip")
+      println(s"i=$i, value is $it")
+       if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -256,7 +256,7 @@ object fastColoringBitSetSpark extends Serializable {
 
     //On retourne cette liste, qui contient au maximum chunkSize éléments
     //Il faut ajuster la valeur des éléments de cette liste pour les id du chunk
-    //println(s"F: $certifiedInvalidGuys ")
+    println(s"F: $certifiedInvalidGuys ")
     certifiedInvalidGuys
 
   }
@@ -689,7 +689,7 @@ object testBitSetSpark extends App {
 
   import gen.verifyTestSuite
 
-  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")
+  val conf = new SparkConf().setMaster("local[1]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")
 
 //  conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
 //  conf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
@@ -702,9 +702,6 @@ object testBitSetSpark extends App {
 
   val sc = new SparkContext(conf)
   sc.setLogLevel("OFF")
-
-
-
 
   println(s"Printing sc.appname : ${sc.appName}")
   println(s"Printing default partitions : ${sc.defaultMinPartitions}")
@@ -722,13 +719,13 @@ object testBitSetSpark extends App {
   //println(s"Printing spark.conf : ${spark.conf}")
   println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
-  var n = 9
-  var t = 7
-  var v = 4
+  var n = 3
+  var t = 2
+  var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = false
-  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 10000, "OC") //4000 pour 100 2 2
+  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 4, "OC") //4000 pour 100 2 2
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")

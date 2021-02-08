@@ -8,6 +8,8 @@ import enumerator.distributed_enumerator.fastGenCombos
 import ordercoloring.OrderColoring.coloringToTests
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
+import org.roaringbitmap.RoaringBitmap
+import org.roaringbitmap.buffer.MutableRoaringBitmap
 import progressivecoloring.progressive_coloring.assign_numberClauses
 import utils.utils
 import withoutSpark.noSparkColoring.withoutSpark
@@ -27,6 +29,7 @@ import scala.util.{Failure, Success}
 object noSparkColoring extends Serializable {
 
   var debug = false
+
   /**
     *
     */
@@ -115,8 +118,8 @@ object noSparkColoring extends Serializable {
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
       val afterAddToTableaux = System.nanoTime()
 
-      val growTablesTime = (afterGrow -startTime ).toDouble / 1000000000
-      val addTableauxTime = (afterAddToTableaux - afterGrow  ).toDouble / 1000000000
+      val growTablesTime = (afterGrow - startTime).toDouble / 1000000000
+      val addTableauxTime = (afterAddToTableaux - afterGrow).toDouble / 1000000000
 
       println(s"Grow tables : $growTablesTime seconds")
       println(s"Add tableaux time : $addTableauxTime seconds")
@@ -145,19 +148,20 @@ object noSparkColoring extends Serializable {
         }
       }
 
-      val r1: ParArray[(Long, BitSet)] = generateadjlist_fastcoloringFutures(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc)
+      val r1 = generateadjlist_fastcoloringFutures(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc)
 
-      if (debug == true)println("Debug de l'adj list")
-      if (debug == true) r1.foreach(  e => println(s"${e._1} ${e._2.toString}"))
+      if (debug == true) println("Debug de l'adj list")
+      if (debug == true) r1.foreach(e => println(s"${e._1} ${e._2.toString}"))
 
       val r2 = if (algorithm == "KP") {
         println("Using the Knights & Peasants algorithm to color the graph...")
-        progressiveKP(colors, sc.makeRDD(r1.toArray), r1.size, maxColor, sc)
+        //progressiveKP(colors, sc.makeRDD(r1.toArray), r1.size, maxColor, sc)
+        (1, 1)
       }
       else {
         println("Using the Order Coloring algorithm to color the graph...")
         val t1 = System.nanoTime()
-        val a = ordercoloring(colors, r1.toArray, i, maxColor)
+        val a = ordercoloringRoaring(colors, r1.toArray, i, maxColor)
         val t2 = System.nanoTime()
         val time_elapsed = (t2 - t1).toDouble / 1000000000
         println(s"Time elapsed for Order Coloring: $time_elapsed seconds")
@@ -277,6 +281,20 @@ object noSparkColoring extends Serializable {
 
 
   /**
+    * Input: a Bitset, output: A Roaring Bitmap
+    *
+    * @param bitset
+    */
+  def bitSetToRoaringBitmap(bitset: BitSet) = {
+    val r = new RoaringBitmap()
+    //r.addN()
+    for (elem <- bitset.iterator) {
+      r.add(elem)
+    }
+    r
+  }
+
+  /**
     * Input: RDD de combos, tableau, etoiles. Output: un RDD de (id, adjlist) pour colorier le graphew
     * Cette version n'utilise pas Apache Spark
     *
@@ -289,24 +307,30 @@ object noSparkColoring extends Serializable {
     * @return
     */
   def generateadjlist_fastcoloringFutures(i: Long, step: Long,
-                                     combos: Array[(Array[Char], Long)],
-                                     tableau: Array[Array[BitSet]],
-                                     etoiles: Array[BitSet],
-                                     sc: SparkContext) = {
-
+                                          combos: Array[(Array[Char], Long)],
+                                          tableau: Array[Array[BitSet]],
+                                          etoiles: Array[BitSet],
+                                          sc: SparkContext) = {
 
 
     println("Generating the adjacency lists using the fast graph construction algorithm...")
     println("Here, we are using Scala Futures")
+    println("Run compression : " + compressRuns)
 
     val t1 = System.nanoTime()
 
-    val r1 = combos.par.flatMap( combo =>
-    {
+    val r1 = combos.par.flatMap(combo => {
       val id = combo._2
       if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
-        val adjlist = comboToADJ(id, combo._1, tableau, etoiles)
+        val adj = comboToADJ(id, combo._1, tableau, etoiles)
+
+        //Convert to RoaringBitmap
+        val adjlist = bitSetToRoaringBitmap(adj)
+        if (compressRuns == true) {
+          adjlist.runOptimize()
+        }
+
         //La liste est de taille minimum, 64 bits
         Some(combo._2, adjlist)
       }
@@ -322,7 +346,6 @@ object noSparkColoring extends Serializable {
   }
 
 
-
   /**
     * Input: RDD de combos, tableau, etoiles. Output: un RDD de (id, adjlist) pour colorier le graphew
     * Cette version n'utilise pas Apache Spark
@@ -336,29 +359,28 @@ object noSparkColoring extends Serializable {
     * @return
     */
   def generateadjlist_fastcoloringST(i: Long, step: Long,
-                                   combos: Array[(Array[Char], Long)],
-                                   tableau: Array[Array[BitSet]],
-                                   etoiles: Array[BitSet],
-                                   sc: SparkContext) = {
+                                     combos: Array[(Array[Char], Long)],
+                                     tableau: Array[Array[BitSet]],
+                                     etoiles: Array[BitSet],
+                                     sc: SparkContext) = {
 
     println("Generating the adjacency lists using the fast graph construction algorithm...")
 
     val t1 = System.nanoTime()
 
-    val r1 = combos.flatMap( combo =>
-    {
-        val id = combo._2
-        if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
-          //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
-          val adjlist = comboToADJ(id, combo._1, tableau, etoiles)
-          //La liste est de taille minimum, 64 bits
-          Some(combo._2, adjlist)
-        }
-        else {
-          //println("Not calculing adjlist for first combo")
-          None
-        }
-      })
+    val r1 = combos.flatMap(combo => {
+      val id = combo._2
+      if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
+        //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
+        val adjlist = comboToADJ(id, combo._1, tableau, etoiles)
+        //La liste est de taille minimum, 64 bits
+        Some(combo._2, adjlist)
+      }
+      else {
+        //println("Not calculing adjlist for first combo")
+        None
+      }
+    })
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
     println(s"Time to create all adj lists: $time_elapsed seconds")
@@ -479,6 +501,67 @@ object noSparkColoring extends Serializable {
     }
   }
 
+
+  /**
+    * Color N vertices at a time using the Order Coloring algorithm.
+    * The adjvectors are precalculated
+    *
+    * @return
+    */
+  def ordercoloringRoaring(colors: Array[Int], adjMatrix: Array[(Long, RoaringBitmap)], i: Int,
+                           maxColor: Int) = {
+
+    //    import scala.io.StdIn.readLine
+    //    println("On pause ici. Va voir la taille du truc dans Spark UI")
+    //    var temp = readLine()
+
+    val limit = adjMatrix.size //the number of iterations we do
+    var j = 0 //start coloring using the first adjvector of the adjmatrix
+    var currentMaxColor = maxColor
+
+    loop
+
+    def loop(): Unit = {
+
+      //Only color n vertices in this loop
+      if (j == limit) return
+
+      //Build the neighborcolors data structure for this vertex (j)
+      //We iterate through the adjvector to find every colored vertex he's connected to and take their color.
+      val neighborcolors = new BitSet(currentMaxColor + 2)
+
+      //Batch iteration through the neighbors of this guy
+      val buffer = new Array[Int](256)
+      val it = adjMatrix(j)._2.getBatchIterator
+      val id = adjMatrix(j)._1
+
+      while (it.hasNext) {
+        val batch = it.nextBatch(buffer)
+        earlyexit();
+        def earlyexit(): Unit = {
+          for (i <- 0 until batch) {
+            val neighbor = buffer(i)
+            if (neighbor >= id) return
+            val neighborColor = colors(neighbor)
+            neighborcolors.set(neighborColor)
+          }
+        }
+
+      }
+
+      val foundColor = colorBitSet(neighborcolors)
+      colors(i + j) = foundColor
+
+      if (foundColor > currentMaxColor) currentMaxColor = foundColor
+      j += 1 //we color the next vertex
+      loop
+    }
+
+    //Return the number of iterations we did, and the maxColor
+    (limit, currentMaxColor)
+  }
+
+
   /**
     * Color N vertices at a time using the Order Coloring algorithm.
     * The adjvectors are precalculated
@@ -557,6 +640,34 @@ object noSparkColoring extends Serializable {
     return 1 //the case when the color lookuo table is empty
   }
 
+
+  /**
+    * On itere sur le bitset des couleurs adjacentes. Dès qu'un bit du bitset est égal a zéro, on peut prendre cette couleur.
+    *
+    * @param vertices
+    * @param vertex
+    * @return THE COLOR THAT WE CAN TAKE
+    */
+  def colorBitSet(neighbor_colors: BitSet) = {
+    var i = 1
+    var res = -1
+
+    loop;
+    def loop(): Unit = {
+      while (true) {
+        val next = neighbor_colors.nextSetBit(i)
+        if (next == -1) return //Fin du truc
+
+        if (next > i) {
+          res = i
+          return
+        }
+        i += 1
+      }
+    }
+
+    res
+  }
 
   /**
     * We will modify the colors array.
@@ -681,7 +792,7 @@ object noSparkColoring extends Serializable {
     * @return
     */
   def withoutSpark(n: Int, t: Int, v: Int, sc: SparkContext,
-                                            chunkSize: Int = 4000, algorithm: String = "OC"): Int = {
+                   chunkSize: Int = 4000, algorithm: String = "OC"): Int = {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
@@ -735,13 +846,14 @@ object testWithoutSpark extends App {
   println(s"Printing sc.conf : ${sc.getConf}")
   println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
-  var n = 400
+  var n = 3
   var t = 2
   var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
+
   compressRuns = false
-  val maxColor = withoutSpark(n, t, v, sc, 50000, "OC") //4000 pour 100 2 2
+  val maxColor = withoutSpark(n, t, v, sc, 100000, "OC") //4000 pour 100 2 2
   println("We have " + maxColor + " tests")
 
 }

@@ -712,14 +712,14 @@ object testFastConstructionRoaring extends App {
   println(s"Printing sc.conf : ${sc.getConf}")
   println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
-  var n = 100
+  var n = 400
   var t = 2
   var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
   import FastGraphConstruction.FastConstructionRoaring.distributed_fastcoloring_bitset_spark
   compressRuns = false
-  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 1000000, "OC") //4000 pour 100 2 2
+  val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, 50000, "OC") //4000 pour 100 2 2
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
