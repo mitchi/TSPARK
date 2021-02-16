@@ -219,16 +219,13 @@ object noSparkColoring extends Serializable {
                         etoiles: BitSet) = {
 
     // if (debug == true) println(s"L: $list")
-    //if (debug == true) println(s"E: $etoiles")
-
+   // if (debug == true) println(s"E: $etoiles")
     val possiblyValidGuys = list | etoiles
 
     //if (debug == true) println(s"|: $possiblyValidGuys")
-
     possiblyValidGuys.xor1()
 
     //if (debug == true)println(s"^: $possiblyValidGuys")
-
     possiblyValidGuys
   }
 
@@ -549,7 +546,7 @@ object noSparkColoring extends Serializable {
 
       }
 
-      val foundColor = colorBitSet(neighborcolors)
+      val foundColor = colorBitSet(neighborcolors, id)
       colors(i + j) = foundColor
 
       if (foundColor > currentMaxColor) currentMaxColor = foundColor
@@ -648,15 +645,22 @@ object noSparkColoring extends Serializable {
     * @param vertex
     * @return THE COLOR THAT WE CAN TAKE
     */
-  def colorBitSet(neighbor_colors: BitSet) = {
+  def colorBitSet(neighbor_colors: BitSet, id : Long) = {
+
     var i = 1
     var res = -1
+
+    println("Id is " + id)
+    println("neighbor colors are " + neighbor_colors.toString)
 
     loop;
     def loop(): Unit = {
       while (true) {
         val next = neighbor_colors.nextSetBit(i)
-        if (next == -1) return //Fin du truc
+        if (next == -1) {
+          res = i
+          return
+        } //Fin du truc
 
         if (next > i) {
           res = i
@@ -666,7 +670,11 @@ object noSparkColoring extends Serializable {
       }
     }
 
+    println("Color taken is " + res)
+
     res
+
+
   }
 
   /**
@@ -853,7 +861,7 @@ object testWithoutSpark extends App {
   import cmdlineparser.TSPARK.compressRuns
 
   compressRuns = false
-  val maxColor = withoutSpark(n, t, v, sc, 100000, "OC") //4000 pour 100 2 2
+  val maxColor = withoutSpark(n, t, v, sc, 4, "OC") //4000 pour 100 2 2
   println("We have " + maxColor + " tests")
 
 }

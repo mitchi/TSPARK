@@ -33,41 +33,40 @@ class BitSet(numBits: Int) extends Serializable {
    val numWords = words.length
 
 
+//  /**
+//    * Printing the bitset in compact form
+//    * Marche parfaitement maintenant
+//    * @return
+//    */
+//  override def toString: String =
+//  {
+//    var output = "    "
+//    var j = 0
+//
+//    val it = this.iterator
+//
+//    for (i <- it) {
+//      while (j != i) {
+//        output += "0 "
+//        j+=1
+//      }
+//      if (j == i) {
+//        output+="1 "
+//        j+=1
+//      }
+//
+//    }
+//
+//    output += s" capacity:$capacity"
+//    output
+//  }
+
 
   /**
     * Printing the bitset in compact form
-    * Marche parfaitement maintenant
     * @return
     */
-  override def toString: String =
-  {
-    var output = "    "
-    var j = 0
-
-    val it = this.iterator
-
-    for (i <- it) {
-      while (j != i) {
-        output += "0 "
-        j+=1
-      }
-      if (j == i) {
-        output+="1 "
-        j+=1
-      }
-
-    }
-
-    output += s" capacity:$capacity"
-    output
-  }
-
-
-  /**
-    * Printing the bitset in compact form
-    * @return
-    */
-   def toString4: String =
+   override def toString: String =
   {
       var output = ""
       val it = this.iterator
@@ -76,7 +75,6 @@ class BitSet(numBits: Int) extends Serializable {
       }
       output
   }
-
 
   /**
     * Printing the bitset in compact form
