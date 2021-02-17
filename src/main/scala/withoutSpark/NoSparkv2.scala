@@ -1,16 +1,14 @@
 package withoutSpark
 
-import central.gen
-import central.gen.{filename, verifyTestSuite}
-import cmdlineparser.TSPARK.{compressRuns, save}
+import central.gen.filename
+import cmdlineparser.TSPARK.compressRuns
 import com.acme.BitSet
 import enumerator.distributed_enumerator.fastGenCombos
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 import progressivecoloring.progressive_coloring.assign_numberClauses
 import utils.utils
-import withoutSpark.NoSparkColoring.withoutSpark
 
 import scala.util.Random
 
@@ -19,7 +17,7 @@ import scala.util.Random
   * On utilise quand même Spark pour faire des trucs que je n'ai pas envie de recoder, mais je veux juste voir quelle genre de vitesse on peut obtenir
   */
 
-object NoSparkColoring extends Serializable {
+object NoSparkv2 extends Serializable {
 
   var debug = false
 
@@ -212,7 +210,7 @@ object NoSparkColoring extends Serializable {
                         etoiles: BitSet) = {
 
     // if (debug == true) println(s"L: $list")
-   // if (debug == true) println(s"E: $etoiles")
+    // if (debug == true) println(s"E: $etoiles")
     val possiblyValidGuys = list | etoiles
 
     //if (debug == true) println(s"|: $possiblyValidGuys")
@@ -309,14 +307,22 @@ object NoSparkColoring extends Serializable {
 
     val t1 = System.nanoTime()
 
-    val r1 = combos.par.flatMap(combo => {
+    var totalTimeConvert = 0.0
+
+    val r1 = combos.flatMap(combo => {
       val id = combo._2
       if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
         val adj = comboToADJ(id, combo._1, tableau, etoiles)
 
         //Convert to RoaringBitmap
+
+        val t3 = System.nanoTime()
         val adjlist = bitSetToRoaringBitmap(adj)
+        val t4 = System.nanoTime()
+        val timeConvert = t4 - t3
+        totalTimeConvert += timeConvert
+
         if (compressRuns == true) {
           adjlist.runOptimize()
         }
@@ -329,9 +335,13 @@ object NoSparkColoring extends Serializable {
         None
       }
     })
+
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
+    val timeToConvertPrint = totalTimeConvert.toDouble / 1000000000
     println(s"Time to create all adj lists: $time_elapsed seconds")
+    println(s"Total time to convert: $timeToConvertPrint seconds")
+
     r1
   }
 
@@ -519,6 +529,8 @@ object NoSparkColoring extends Serializable {
       //Build the neighborcolors data structure for this vertex (j)
       //We iterate through the adjvector to find every colored vertex he's connected to and take their color.
       val neighborcolors = new BitSet(currentMaxColor + 2)
+      neighborcolors.setUntil(currentMaxColor + 2) //On remplit le bitset avec des 1
+      neighborcolors.unset(0) //peut etre pas nécessaire
 
       //Batch iteration through the neighbors of this guy
       val buffer = new Array[Int](256)
@@ -533,7 +545,7 @@ object NoSparkColoring extends Serializable {
             val neighbor = buffer(i)
             if (neighbor >= id) return
             val neighborColor = colors(neighbor)
-            neighborcolors.set(neighborColor)
+            neighborcolors.unset(neighborColor)
           }
         }
 
@@ -630,7 +642,6 @@ object NoSparkColoring extends Serializable {
     return 1 //the case when the color lookuo table is empty
   }
 
-
   /**
     * On itere sur le bitset des couleurs adjacentes. Dès qu'un bit du bitset est égal a zéro, on peut prendre cette couleur.
     *
@@ -638,36 +649,10 @@ object NoSparkColoring extends Serializable {
     * @param vertex
     * @return THE COLOR THAT WE CAN TAKE
     */
-  def colorBitSet(neighbor_colors: BitSet, id : Long) = {
-
+  def colorBitSet(neighbor_colors: BitSet, id: Long) = {
     var i = 1
-    var res = -1
-
-  //  println("Id is " + id)
-  //  println("neighbor colors are " + neighbor_colors.toString)
-
-    loop;
-    def loop(): Unit = {
-      while (true) {
-        val next = neighbor_colors.nextSetBit(i)
-        if (next == -1) {
-          res = i
-          return
-        } //Fin du truc
-
-        if (next > i) {
-          res = i
-          return
-        }
-        i += 1
-      }
-    }
-
-//    println("Color taken is " + res)
-
+    val res = neighbor_colors.nextSetBit(i)
     res
-
-
   }
 
   /**
@@ -822,43 +807,3 @@ object NoSparkColoring extends Serializable {
     maxColor
   }
 }
-
-object testWithoutSpark extends App {
-
-  import gen.verifyTestSuite
-
-  val conf = new SparkConf().setMaster("local[*]").
-    setAppName("Without Spark")
-    .set("spark.driver.maxResultSize", "10g")
-  val sc = new SparkContext(conf)
-  sc.setLogLevel("OFF")
-
-  println(s"Printing sc.appname : ${sc.appName}")
-  println(s"Printing default partitions : ${sc.defaultMinPartitions}")
-  println(s"Printing sc.master : ${sc.master}")
-  println(s"Printing sc.sparkUser : ${sc.sparkUser}")
-  println(s"Printing sc.resources : ${sc.resources}")
-  println(s"Printing sc.deploymode : ${sc.deployMode}")
-  println(s"Printing sc.defaultParallelism : ${sc.defaultParallelism}")
-  println(s"Printing spark.driver.maxResultSize : ${sc.getConf.getOption("spark.driver.maxResultSize")}")
-  println(s"Printing spark.driver.memory : ${sc.getConf.getOption("spark.driver.memory")}")
-  println(s"Printing spark.executor.memory : ${sc.getConf.getOption("spark.executor.memory")}")
-  println(s"Printing spark.serializer : ${sc.getConf.getOption("spark.serializer")}")
-  println(s"Printing sc.conf : ${sc.getConf}")
-  println(s"Printing boolean sc.islocal : ${sc.isLocal}")
-
-  var n = 8
-  var t = 7
-  var v = 4
-
-  import cmdlineparser.TSPARK.compressRuns
-
-  compressRuns = false
-  val maxColor = withoutSpark(n, t, v, sc, 100000, "OC") //4000 pour 100 2 2
-  println("We have " + maxColor + " tests")
-
-}
-
-
-
-
