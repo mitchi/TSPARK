@@ -79,7 +79,7 @@ object NoSparkv4 extends Serializable {
       chunkNo += 1
       println(s"Now processing Chunk $chunkNo of the graph...")
       println("Calling Garbage Collection...")
-      System.gc() //calling garbage collection here
+    //  System.gc() //calling garbage collection here
 
       //Filter the combos we color in the next OrderColoring iteration
       println("We are now  creating the chunk we need...")
@@ -150,7 +150,7 @@ object NoSparkv4 extends Serializable {
       else {
         println("Using the Order Coloring algorithm to color the graph...")
         val t1 = System.nanoTime()
-        val a = ordercoloringRoaring(colors, r1, i, maxColor)
+        val a = ordercoloringRoaring(colors, r1.toArray, i, maxColor)
         val t2 = System.nanoTime()
         val time_elapsed = (t2 - t1).toDouble / 1000000000
         println(s"Time elapsed for Order Coloring: $time_elapsed seconds")
@@ -308,11 +308,14 @@ object NoSparkv4 extends Serializable {
 
     var totalTimeConvert = 0.0
 
-    val r1 = combos.flatMap(combo => {
+    val r1 = combos.par.flatMap(combo => {
       val id = combo._2
       if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
         val adj = comboToADJ(id, combo._1, tableau, etoiles)
+
+        //On compresse la liste en runs
+        adj.runOptimize()
 
         //La liste est de taille minimum, 64 bits
         Some(combo._2, adj)
