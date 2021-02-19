@@ -276,6 +276,33 @@ class BitSet(numBits: Int) extends Serializable {
     (words(index >> 6) & bitmask) != 0  // div by 64 and mask
   }
 
+
+  /**
+    * Get an iterator over the set bits.
+    * This is an iterator for parallel work
+    * Il faut que les partitions commencent a zéro
+    */
+  def iterator2(p: Int, numberPartitions : Int, id: Int): Iterator[Int] = new Iterator[Int] {
+    var partSize = numBits / numberPartitions
+    var start = if (p == 0) 0
+                else partSize * p
+    var ind = nextSetBit(start)
+    var bound = start + partSize
+
+//    println("Numbits is " + numBits)
+//    println("Partition Size is " + partSize)
+//    println("Partition is " + p)
+//    println("Start is " + start)
+//    println("End is " + bound)
+
+    override def hasNext: Boolean = ind >= 0 && ind <= bound
+    override def next(): Int = {
+      val tmp = ind
+      ind = nextSetBit(ind + 1)
+      tmp
+    }
+  }
+
   /**
     * Get an iterator over the set bits.
     */
