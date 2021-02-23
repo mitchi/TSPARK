@@ -9,11 +9,12 @@ import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 import progressivecoloring.progressive_coloring.assign_numberClauses
 import utils.utils
+
+import java.util.concurrent.{Executors, TimeUnit}
 import scala.util.Random
 
 /**
-  * On essaie de faire la même chose sans Apache Spark, pour voir les temps
-  * On utilise quand même Spark pour faire des trucs que je n'ai pas envie de recoder, mais je veux juste voir quelle genre de vitesse on peut obtenir
+  * Implémentation du Graph Coloring avec OX+Bitsets, et OrderColoring parallélisé
   */
 
 object NoSparkParallelv1 extends Serializable {
@@ -488,6 +489,19 @@ object NoSparkParallelv1 extends Serializable {
   }
 
   /**
+    * On donne tous les paramètres nécessaires au bon fonctionnement de ce thread
+    * @param p
+    * @param neighborcolors
+    * @param colors
+    */
+  class Handler(p: Int, neighborcolors : BitSet, colors: Array[Int]) extends Runnable {
+
+    def run(): Unit = {
+
+    }
+  }
+
+  /**
     * Color N vertices at a time using the Order Coloring algorithm.
     * The adjvectors are precalculated
     *
@@ -502,6 +516,9 @@ object NoSparkParallelv1 extends Serializable {
 
     println("On essaie le truc parallèle!")
 
+    var list2 = (0 to 3)
+    var tp = Executors.newFixedThreadPool(list2.size)
+
     loop
 
     def loop(): Unit = {
@@ -512,24 +529,30 @@ object NoSparkParallelv1 extends Serializable {
       val neighborcolors = new BitSet(currentMaxColor + 2)
       neighborcolors.setUntil(currentMaxColor + 2) //On remplit le bitset avec des 1
 
+      list2.foreach( elem => {
+        tp.submit( new Handler(elem, neighborcolors, colors) {
+        })
+      })
+
+      tp.awaitTermination(1000, TimeUnit.MINUTES)
+
       //Batch iteration through the neighbors of this guy
       val id = adjMatrix(j)._1
       val bitset = adjMatrix(j)._2
 
-
-      var list = (0 to 3)
-      list.par.foreach( p => {
-        //Ok, on itere sur tous les bits. Il faut arrêter avant
-        loop2;
-        def loop2(): Unit = {
-            for (elem <- bitset.iterator2(p, list.size)) {
-              if (elem >= id) return
-              val neighbor = elem
-              val neighborColor = colors(neighbor)
-              neighborcolors.unset(neighborColor)
-            }
-        }
-      })
+//      var list = (0 to 3)
+//      list.par.foreach( p => {
+//        //Ok, on itere sur tous les bits. Il faut arrêter avant
+//        loop2;
+//        def loop2(): Unit = {
+//            for (elem <- bitset.iterator2(p, list.size)) {
+//              if (elem >= id) return
+//              val neighbor = elem
+//              val neighborColor = colors(neighbor)
+//              neighborcolors.unset(neighborColor)
+//            }
+//        }
+//      })
 
       val foundColor = colorBitSet(neighborcolors)
       colors(i + j) = foundColor

@@ -180,13 +180,6 @@ object NoSparkv4 extends Serializable {
     println(s"We did a total of $totalIterations iterations, which is $percent% of total")
     println(s"We also colored $vertexPerIteration vertices per iteration on average")
 
-    //Create tests now
-    val properFormRDD = combosNumbered.map(elem => {
-      val id = elem._2
-      val color = colors(id.toInt)
-      (color, elem._1)
-    })
-
     maxColor
   }
 
@@ -682,9 +675,9 @@ object testNoSparkv4 extends App {
   println(s"Printing boolean sc.islocal : ${sc.isLocal}")
   println("Without Spark Version 4")
 
-  var n = 8
-  var t = 7
-  var v = 4
+  var n = 100
+  var t = 2
+  var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
 

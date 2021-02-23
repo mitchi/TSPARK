@@ -282,7 +282,7 @@ class BitSet(numBits: Int) extends Serializable {
     * This is an iterator for parallel work
     * Il faut que les partitions commencent a zéro
     */
-  def iterator2(p: Int, numberPartitions : Int, id: Int): Iterator[Int] = new Iterator[Int] {
+  def iterator2(p: Int, numberPartitions : Int): Iterator[Int] = new Iterator[Int] {
     var partSize = numBits / numberPartitions
     var start = if (p == 0) 0
                 else partSize * p
