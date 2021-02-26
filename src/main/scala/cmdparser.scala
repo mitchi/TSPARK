@@ -37,6 +37,29 @@ object TSPARK {
     var t = opt[Int](name = "t", description = "Generate and join additional clauses using interaction strength t", default = 0)
   }
 
+  object LocalColoring extends Command(name = "localc",
+    description = "No-Spark Graph Coloring using the Fast Graph construction algorithm, and RoaringBitmaps") with CommonOpt {
+
+    var t = arg[Int](name = "t",
+      description = "interaction strength")
+
+    var n = arg[Int](name = "n",
+      description = "number of parameters")
+
+    var v = arg[Int](name = "v",
+      description = "domain size of a parameter")
+
+    var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
+    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Default is 20k", default = 20000)
+    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
+    var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
+    var save = opt[Boolean](name = "save", abbrev = "s", description = "Save the test suite to a file")
+    var bitset = opt[Boolean](name = "bitset", abbrev = "b", description = "Use uncompressed bit set as the main data structure")
+
+  }
+
+
+
 
   object FastColoring extends Command(name = "fastc", description = "Distributed Graph Coloring using the Fast Graph construction algorithm") with CommonOpt {
 
@@ -244,7 +267,7 @@ object TSPARK {
       .version("1.0.0")
       .withProgramName("TSPARK")
       .withDescription("a distributed testing tool")
-      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, FastColoring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
+      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, LocalColoring, FastColoring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
 
     //Create the Spark Context if it does not already exist
     //The options of Spark can be set using the params of the program
@@ -308,6 +331,32 @@ object TSPARK {
     import utils.utils.print_combos_in_order
 
     choice match {
+
+      //Implémentation de Fast Coloring
+      case Some(LocalColoring) => {
+
+        import withoutSpark.NoSparkv4._
+
+        val n = LocalColoring.n
+        val t = LocalColoring.t
+        val v = LocalColoring.v
+        save = LocalColoring.save
+        val chunkSize = LocalColoring.chunkSize
+        val verify = LocalColoring.verify
+        val algorithm = LocalColoring.algorithm //Default is OC, Order Coloring
+        compressRuns = LocalColoring.compressRuns
+        val bitset = LocalColoring.bitset
+
+        val tests = start(n, t, v, sc, chunkSize, algorithm)
+
+        //Verify the test suite (optional)
+        if (verify == true) {
+          val combos = fastGenCombos(n, t, v, sc)
+          val a = verifyTS(combos, tests, sc)
+          if (a == true) println("Test suite is verified")
+          else println("This test suite does not cover the combos")
+        }
+      }
 
       //Implémentation de Fast Coloring
       case Some(FastColoring) => {

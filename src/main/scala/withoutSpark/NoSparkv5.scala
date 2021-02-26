@@ -1,61 +1,34 @@
-package OXRoaring
-
+package withoutSpark
 import central.gen.filename
 import cmdlineparser.TSPARK.compressRuns
 import com.acme.BitSet
-import enumerator.distributed_enumerator.fastGenCombos
-import ordercoloring.OrderColoring.coloringToTests
-import org.apache.spark.{SparkConf, SparkContext}
+import enumerator.enumerator.chunk
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.roaringbitmap.buffer.MutableRoaringBitmap
-import progressivecoloring.progressive_coloring.assign_numberClauses
+import org.roaringbitmap.RoaringBitmap
 import utils.utils
 
-import scala.util.Random
-object RoaringOXColoring2 extends Serializable {
+/**
+  * On essaie de faire la même chose sans Apache Spark, pour voir les temps
+  * On utilise quand même Spark pour faire des trucs que je n'ai pas envie de recoder, mais je veux juste voir quelle genre de vitesse on peut obtenir
+  */
+
+object NoSparkv5 extends Serializable {
 
   var debug = false
-
-//  /**
-//    * On filtre pour n'avoir que les éléments du chunk. Pas besoin du reste
-//    * @param combosRDD
-//    * @param i
-//    * @param chunkSize
-//    */
-//  def filterRDD(combosRDD: RDD[(Array[Char], Long)], i : Long, chunkSize: Long): Unit = {
-//
-//
-//  }
-
-
   /**
     *
     */
-  def fastcoloring(combos: RDD[Array[Char]],
-                   sc: SparkContext,
+
+  def fastcoloring(n: Int, t: Int, v: Int,
                    chunkSize: Int,
-                   n: Int, v: Int,
                    algorithm: String = "OC") = {
 
-    val count = combos.count()
-    //Toutes nos couleurs sont la
+    val seed = System.nanoTime() //on peut utiliser une valeur debug ici
+    var someCombos = chunk(n,t,v, seed, 0, 1)
+    import enumerator.enumerator.count
     val colors = new Array[Int](count.toInt)
-    val seed = if (debug == true) 20 else System.nanoTime()
     var totalIterations = 0
-
-    //Shuffle the combos before. Doing this ensures a different result every run.
-    var mycombos = combos.mapPartitions(it => {
-      Random.setSeed(seed)
-      Random.shuffle(it)
-    }, true)
-
-    //Assign numbers to clauses using a custom algorithm
-    val combosNumbered: RDD[(Array[Char], Long)] = assign_numberClauses(mycombos, sc).cache()
-    println("Shuffling and numbering the clauses is complete")
-
-    //We no longer need the not-numbered combos
-    combos.unpersist(false)
-    mycombos.unpersist(false)
 
     //Before everything, we can color the first vertex with the color 1
     var maxColor = 1
@@ -67,12 +40,7 @@ object RoaringOXColoring2 extends Serializable {
     var etoiles = initTableauEtoiles(n)
 
     //On ajoute l'info du premier combo
-    val firstCombo = combosNumbered.flatMap(e => {
-      if (e._2 == 0) Some(e)
-      else None
-    }).collect()
-
-    // utils.print_helper(firstCombo(0)._1)
+    val firstCombo = Array(someCombos(0))
 
     println("On ajoute l'info du premier combo dans le tableau, et tableau etoiles")
     tableau = addToTableau(tableau, firstCombo, n, v)
@@ -86,17 +54,10 @@ object RoaringOXColoring2 extends Serializable {
 
       chunkNo += 1
       println(s"Now processing Chunk $chunkNo of the graph...")
-      println("Calling Garbage Collection...")
-      //  System.gc() //calling garbage collection here
 
       //Filter the combos we color in the next OrderColoring iteration
       println("We are now  creating the chunk we need...")
-      val someCombos = combosNumbered.flatMap(elem => {
-        if (elem._2 < i + chunkSize && elem._2 >= i) { //if chunksize = 10k, then  i < 10001 and 1 >=1. 2ème itération  < 20001 et >=10001
-          Some(elem)
-        }
-        else None
-      }).collect().sortBy(_._2)
+      someCombos = chunk(n,t,v, seed, i, chunkSize)
 
       val sizeOfChunk = someCombos.size
       println(s"Currently working with a chunk of the graph with $sizeOfChunk vertices.")
@@ -109,23 +70,56 @@ object RoaringOXColoring2 extends Serializable {
 
       //On pourrait mesurer le temps ici
 
+      val startTime = System.nanoTime()
+      val afterGrow = System.nanoTime()
       tableau = addToTableau(tableau, someCombos, n, v)
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
+      val afterAddToTableaux = System.nanoTime()
 
-      //On genere un RDD (Long, MutableRoaringBitmap). Il faut le sortir de la mémoire après aussi
+      val growTablesTime = (afterGrow - startTime).toDouble / 1000000000
+      val addTableauxTime = (afterAddToTableaux - afterGrow).toDouble / 1000000000
+
+      println(s"Grow tables : $growTablesTime seconds")
+      println(s"Add tableaux time : $addTableauxTime seconds")
 
 
-      val r1 = generateadjlist(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
+      if (debug == true) {
+        println("On print les combos du chunk")
+        for (c <- someCombos) {
+          print(c._2 + " "); utils.print_helper(c._1)
+        }
+      }
+
+      if (debug == true) {
+        println("On imprime le tableau apres remplissage")
+        for (i <- 0 until n) { //pour tous les paramètres
+          for (j <- 0 until v) { //pour toutes les valeurs
+            println(s"p$i=$j " + tableau(i)(j).toString)
+          }
+        }
+
+        println("On imprime le tableau etoiles")
+        var tt = 0
+        for (elem <- etoiles) {
+          println(s"p$tt=*" + " " + elem.toString)
+          tt += 1
+        }
+      }
+
+      val r1 = generateadjlist_fastcoloringFutures(i, sizeOfChunk, someCombos, tableau, etoiles)
+
+      if (debug == true) println("Debug de l'adj list")
+      if (debug == true) r1.foreach(e => println(s"${e._1} ${e._2.toString}"))
 
       val r2 = if (algorithm == "KP") {
         println("Using the Knights & Peasants algorithm to color the graph...")
-        progressiveKP(colors, r1, sizeOfChunk, maxColor, sc)
+        //progressiveKP(colors, sc.makeRDD(r1.toArray), r1.size, maxColor, sc)
+        (1, 1)
       }
       else {
         println("Using the Order Coloring algorithm to color the graph...")
         val t1 = System.nanoTime()
-        //val a = ordercoloringRoaring(colors, r1.collect().sortBy(_._1), i, maxColor)
-        val a = ordercoloringRoaring(colors, r1.toLocalIterator.toIterable, i, maxColor)
+        val a = ordercoloringRoaring(colors, r1, i, maxColor)
         val t2 = System.nanoTime()
         val time_elapsed = (t2 - t1).toDouble / 1000000000
         println(s"Time elapsed for Order Coloring: $time_elapsed seconds")
@@ -139,8 +133,6 @@ object RoaringOXColoring2 extends Serializable {
           println(s"vertex $i has color $v")
         }
       }
-
-      r1.unpersist(false)
 
       //Update the max color
       totalIterations += r2._1
@@ -157,26 +149,7 @@ object RoaringOXColoring2 extends Serializable {
     println(s"We did a total of $totalIterations iterations, which is $percent% of total")
     println(s"We also colored $vertexPerIteration vertices per iteration on average")
 
-    //Imprimer les couleurs
-    var jjj = 0
-    for (i <- colors) {
-      println(jjj + " " +  i)
-      jjj+=1
-    }
-
-    //Create tests now
-    val bcastcolors = sc.broadcast(colors)
-    val properFormRDD = combosNumbered.map(elem => {
-      val id = elem._2
-      val color = bcastcolors.value(id.toInt)
-      (color, elem._1)
-    })
-
-    //Transform into tests
-    val tests =  coloringToTests(properFormRDD)
-    tests.foreach(println)
-
-    (maxColor, tests)
+    (maxColor)
   }
 
 
@@ -193,13 +166,20 @@ object RoaringOXColoring2 extends Serializable {
     * @return
     */
   def generateOtherList(id: Long,
-                        list: MutableRoaringBitmap,
-                        etoiles: MutableRoaringBitmap) = {
+                        list: RoaringBitmap,
+                        etoiles: RoaringBitmap) = {
 
+    // if (debug == true) println(s"L: $list")
+    // if (debug == true) println(s"E: $etoiles")
     val possiblyValidGuys = list.clone()
     possiblyValidGuys.or(etoiles)
+
     possiblyValidGuys.flip(0.toLong
       , possiblyValidGuys.last())
+
+    //if (debug == true) println(s"|: $possiblyValidGuys")
+
+    //if (debug == true)println(s"^: $possiblyValidGuys")
     possiblyValidGuys
   }
 
@@ -213,14 +193,19 @@ object RoaringOXColoring2 extends Serializable {
     */
   def comboToADJ(id: Long,
                  combo: Array[Char],
-                 tableau: Array[Array[MutableRoaringBitmap]],
-                 etoiles: Array[MutableRoaringBitmap]) = {
+                 tableau: Array[Array[RoaringBitmap]],
+                 etoiles: Array[RoaringBitmap]) = {
 
     var i = 0 //quel paramètre?
-    var certifiedInvalidGuys = new MutableRoaringBitmap()
+    var certifiedInvalidGuys = new RoaringBitmap()
+
+    if (debug == true) println("Combo is " + utils.print_helper(combo) + s" id is $id")
 
     //On crée le set des validguys a partir de notre tableau rempli
     for (it <- combo) {
+
+      //      println(s"i=$i, value is $it")
+      //       if (it == '*') println("*, we skip")
 
       if (it != '*') {
         val paramVal = it - '0'
@@ -236,6 +221,9 @@ object RoaringOXColoring2 extends Serializable {
       i += 1
     }
 
+    //On retourne cette liste, qui contient au maximum chunkSize éléments
+    //Il faut ajuster la valeur des éléments de cette liste pour les id du chunk
+    //println(s"F: $certifiedInvalidGuys ")
     certifiedInvalidGuys
 
   }
@@ -246,8 +234,8 @@ object RoaringOXColoring2 extends Serializable {
     *
     * @param bitset
     */
-  def bitSetToMutableRoaringBitmap(bitset: BitSet) = {
-    val r = new MutableRoaringBitmap()
+  def bitSetToRoaringBitmap(bitset: BitSet) = {
+    val r = new RoaringBitmap()
     //r.addN()
     for (elem <- bitset.iterator) {
       r.add(elem)
@@ -267,28 +255,28 @@ object RoaringOXColoring2 extends Serializable {
     * @param sc
     * @return
     */
-  def generateadjlist(i: Long, step: Long,
-                      combos: RDD[(Array[Char], Long)],
-                      tableau: Array[Array[MutableRoaringBitmap]],
-                      etoiles: Array[MutableRoaringBitmap],
-                      sc: SparkContext) = {
+  def generateadjlist_fastcoloringFutures(i: Long, step: Long,
+                                          combos: Array[(Array[Char], Long)],
+                                          tableau: Array[Array[RoaringBitmap]],
+                                          etoiles: Array[RoaringBitmap]) = {
+
 
     println("Generating the adjacency lists using the fast graph construction algorithm...")
     println("Here, we are using Scala Futures")
     println("Run compression : " + compressRuns)
 
-    val bcastTableau = sc.broadcast(tableau)
-    val bcastEtoiles = sc.broadcast(etoiles)
+    val t1 = System.nanoTime()
 
-    val r1 = combos.flatMap(combo => {
+    var totalTimeConvert = 0.0
+
+    val r1 = combos.flatMap(combo => { //.par
       val id = combo._2
       if (id != 0 && id < i + step && id >= i) { //Discard first combo, it is already colored. We don't need to compute its adjlist
         //Pour chaque combo du RDD, on va aller chercher la liste de tous les combos dans le chunk qui sont OK
-        val adj = comboToADJ(id, combo._1, bcastTableau.value, bcastEtoiles.value)
+        val adj = comboToADJ(id, combo._1, tableau, etoiles)
 
         //On compresse la liste en runs
-        if (compressRuns == true)
-          adj.runOptimize()
+        adj.runOptimize()
 
         //La liste est de taille minimum, 64 bits
         Some(combo._2, adj)
@@ -299,8 +287,11 @@ object RoaringOXColoring2 extends Serializable {
       }
     })
 
-    bcastEtoiles.unpersist(false)
-    bcastTableau.unpersist(false)
+    val t2 = System.nanoTime()
+    val time_elapsed = (t2 - t1).toDouble / 1000000000
+    val timeToConvertPrint = totalTimeConvert.toDouble / 1000000000
+    println(s"Time to create all adj lists: $time_elapsed seconds")
+    println(s"Total time to convert: $timeToConvertPrint seconds")
 
     r1
   }
@@ -313,13 +304,13 @@ object RoaringOXColoring2 extends Serializable {
     *
     * */
   def initTableau(n: Int, v: Int) = {
-    var tableau = new Array[Array[MutableRoaringBitmap]](n)
+    var tableau = new Array[Array[RoaringBitmap]](n)
 
     //On met très exactement n paramètres, chacun avec v valeurs. On ne gère pas les *
     for (i <- 0 until n) {
-      tableau(i) = new Array[MutableRoaringBitmap](v)
+      tableau(i) = new Array[RoaringBitmap](v)
       for (v <- 0 until v) {
-        tableau(i)(v) = new MutableRoaringBitmap()
+        tableau(i)(v) = new RoaringBitmap()
       }
     }
     tableau
@@ -330,10 +321,10 @@ object RoaringOXColoring2 extends Serializable {
     * Roaring Bitmap dans le tableau
     */
   def initTableauEtoiles(n: Int) = {
-    var tableauEtoiles = new Array[MutableRoaringBitmap](n)
+    var tableauEtoiles = new Array[RoaringBitmap](n)
 
     for (i <- 0 until n) {
-      tableauEtoiles(i) = new MutableRoaringBitmap()
+      tableauEtoiles(i) = new RoaringBitmap()
     }
 
     tableauEtoiles
@@ -348,7 +339,7 @@ object RoaringOXColoring2 extends Serializable {
     * @param n
     * @param v
     */
-  def addToTableau(tableau: Array[Array[MutableRoaringBitmap]],
+  def addToTableau(tableau: Array[Array[RoaringBitmap]],
                    chunk: Array[(Array[Char], Long)], n: Int, v: Int) = {
 
     //On remplit cette structure avec notre chunk
@@ -366,7 +357,8 @@ object RoaringOXColoring2 extends Serializable {
     tableau
   }
 
-  def addTableauEtoiles(etoiles: Array[MutableRoaringBitmap],
+
+  def addTableauEtoiles(etoiles: Array[RoaringBitmap],
                         chunk: Array[(Array[Char], Long)], n: Int, v: Int) = {
 
     //On remplit cette structure avec notre chunk
@@ -381,20 +373,31 @@ object RoaringOXColoring2 extends Serializable {
     etoiles
   }
 
+
   /**
     * Color N vertices at a time using the Order Coloring algorithm.
     * The adjvectors are precalculated
     *
     * @return
     */
-  def ordercoloringRoaring(colors: Array[Int], adjMatrix: Iterable[(Long, MutableRoaringBitmap)], i: Int,
+  def ordercoloringRoaring(colors: Array[Int], adjMatrix: Array[(Long, RoaringBitmap)], i: Int,
                            maxColor: Int) = {
+
+    //    import scala.io.StdIn.readLine
+    //    println("On pause ici. Va voir la taille du truc dans Spark UI")
+    //    var temp = readLine()
 
     val limit = adjMatrix.size //the number of iterations we do
     var j = 0 //start coloring using the first adjvector of the adjmatrix
     var currentMaxColor = maxColor
 
-    for ( i <- adjMatrix) {
+    loop
+
+    def loop(): Unit = {
+
+      //Only color n vertices in this loop
+      if (j == limit) return
+
       //Build the neighborcolors data structure for this vertex (j)
       //We iterate through the adjvector to find every colored vertex he's connected to and take their color.
       val neighborcolors = new BitSet(currentMaxColor + 2)
@@ -403,8 +406,8 @@ object RoaringOXColoring2 extends Serializable {
 
       //Batch iteration through the neighbors of this guy
       val buffer = new Array[Int](256)
-      val it = i._2.getBatchIterator
-      val id = i._1
+      val it = adjMatrix(j)._2.getBatchIterator
+      val id = adjMatrix(j)._1
 
       while (it.hasNext) {
         val batch = it.nextBatch(buffer)
@@ -417,17 +420,21 @@ object RoaringOXColoring2 extends Serializable {
             neighborcolors.unset(neighborColor)
           }
         }
+
       }
 
       val foundColor = colorBitSet(neighborcolors)
-      colors(id.toInt) = foundColor
+      colors(i + j) = foundColor
 
       if (foundColor > currentMaxColor) currentMaxColor = foundColor
+      j += 1 //we color the next vertex
+      loop
     }
 
     //Return the number of iterations we did, and the maxColor
     (limit, currentMaxColor)
   }
+
 
 
   /**
@@ -472,15 +479,15 @@ object RoaringOXColoring2 extends Serializable {
     *
     * @return
     */
-  def progressiveKP(colors: Array[Int], adjMatrix: RDD[(Long, MutableRoaringBitmap)], remaining: Int,
+  def progressiveKP(colors: Array[Int], adjMatrix: RDD[(Long, BitSet)], remaining: Int,
                     maxColor: Int, sc: SparkContext) = {
 
-    println("Using the Knights & Peasants algorrihtm")
 
     var iterationCounter = 1
     var currentMaxColor = maxColor
     var remainingToBeColored = remaining
     var rdd = adjMatrix
+
     loop
 
     def loop(): Unit = {
@@ -488,10 +495,13 @@ object RoaringOXColoring2 extends Serializable {
 
         //The main exit condition. We have colored everything.
         if (remainingToBeColored <= 0) return
+
+        // println(s"Iteration $iterationCounter ")
+        //Broadcast the list of colors we need from the driver program
         val colors_bcast = sc.broadcast(colors)
 
         //From an adjmatrix RDD, produce a RDD of colors
-        //We can either become a color, or stay the same when we dont return a color.
+        //We can either become a color, or stay the same.
         var colorsRDD = rdd.flatMap(elem => {
 
           val thisId = elem._1.toInt
@@ -500,24 +510,27 @@ object RoaringOXColoring2 extends Serializable {
           var betterPeasant = false
           var c = 0 //the color we find for this guy
 
+          val neighborcolors = new Array[Int](currentMaxColor + 2)
+
           //First, check if the node is a peasant. If it is, we can continue working
           //Otherwise, if the node is a knight (the node has a color), we stop working right away.
-          if (colors(thisId) == 0)
-          { //this node is a peasant
+          if (colors(thisId) == 0) { //this node is a peasant
+
+            //First answer the following question : Can we become a knight in this iteration?
+            //For this, we have to have the best tiebreaker. To check for this, we look at our adjlist.
+            //If we find an earlier peasant that we are connected to, then we have to wait. If it's a knight and not a peasant, we are fine.
+            //To check for peasants, we go through our adjlist from a certain i to a certain j
 
             //Batch iteration through the neighbors of this guy
-            val buffer = new Array[Int](256)
-            val it = adjlist.getBatchIterator
-            val id = thisId
-
-            while (it.hasNext) {
-              val batch = it.nextBatch(buffer)
-              earlyexit();
-              def earlyexit(): Unit = {
-                for (i <- 0 until batch) {
-                  val neighbor = buffer(i)
-                  if (neighbor >= id) return
+            //Ok, on itere sur tous les bits. Il faut arrêter avant
+            loop3;
+            def loop3(): Unit = {
+              while (true) {
+                for (elem <- adjlist.iterator) {
+                  if (elem >= thisId) return
+                  val neighbor = elem
                   val neighborColor = colors(neighbor)
+                  neighborcolors(neighborColor) = 1
                   if (neighborColor == 0) {
                     betterPeasant = true
                     return
@@ -527,33 +540,8 @@ object RoaringOXColoring2 extends Serializable {
             }
 
             //We can become a knight here
-            if (betterPeasant == false)
-            {
-
-              val neighborcolors = new BitSet(currentMaxColor + 2)
-              neighborcolors.setUntil(currentMaxColor + 2) //On remplit le bitset avec des 1
-              neighborcolors.unset(0) //peut etre pas nécessaire
-
-              //Batch iteration through the neighbors of this guy
-              val buffer = new Array[Int](256)
-              val it = adjlist.getBatchIterator
-              val id = thisId
-
-              //Fill the neighbor colors data structure
-              while (it.hasNext) {
-                val batch = it.nextBatch(buffer)
-                earlyexit();
-                def earlyexit(): Unit = {
-                  for (i <- 0 until batch) {
-                    val neighbor = buffer(i)
-                    if (neighbor >= id) return
-                    val neighborColor = colors(neighbor)
-                    neighborcolors.unset(neighborColor)
-                  }
-                }
-              }
-
-              c = colorBitSet(neighborcolors)
+            if (betterPeasant == false) {
+              c = color(neighborcolors)
             }
           } //fin du if this node is a peasant
 
@@ -566,6 +554,10 @@ object RoaringOXColoring2 extends Serializable {
 
         //Unpersist the colors broadcast data structrure
         colors_bcast.unpersist(false)
+
+        //Every vertex we have colored, we mark it in the colors data structure.
+        //We also filter out the vertices that don't improve to a knight
+        //val results = colorsRDD.collect().map(e => e.get)
         val results = colorsRDD.collect()
 
         //Update the colors structure, and update the maximum color at the same time
@@ -596,12 +588,12 @@ object RoaringOXColoring2 extends Serializable {
     * @param sc
     * @return
     */
-  def start(n: Int, t: Int, v: Int, sc: SparkContext,
-            chunkSize: Int = 4000, algorithm: String = "OC"): Int = {
+  def start(n: Int, t: Int, v: Int,
+            chunkSize: Int = 4000, algorithm: String = "OC") = {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
-    println("Distributed Graph Coloring with FastColoring algorithm, RoaringBitmap (buffer) for graph construction")
+    println("Distributed Graph Coloring with FastColoring algorithm, BitSets for graph construction")
     println(s"Run compression for Roaring Bitmap = $compressRuns")
     println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
     println(s"Problem : n=$n,t=$t,v=$v")
@@ -611,57 +603,43 @@ object RoaringOXColoring2 extends Serializable {
     import java.io._
     val pw = new PrintWriter(new FileOutputStream(filename, true))
 
+    val seed = System.nanoTime()
+
     val t1 = System.nanoTime()
 
-    val r1 = fastcoloring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, n, v, algorithm)
-
-    val maxColor = r1._1
-    val tests = r1._2
+    val result = fastcoloring(n,t,v, chunkSize, algorithm)
 
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
 
-    pw.append(s"$t;$n;$v;SPARK_OX_ROARING2;algorithm=$algorithm;$time_elapsed;$maxColor\n")
-    println(s"$t;$n;$v;SPARK_OX_ROARING2;algorithm=$algorithm;$time_elapsed;$maxColor\n")
+    val maxColor = result
+
+    pw.append(s"$t;$n;$v;NO_SPARK_ROARING;algorithm=$algorithm;$time_elapsed;$maxColor\n")
+    println(s"$t;$n;$v;NO_SPARK_ROARING;algorithm=$algorithm;$time_elapsed;$maxColor\n")
     pw.flush()
 
     //Return the test suite
-    maxColor
+    result
   }
 }
 
-object testRoaringOXColoring2 extends App {
+object testNoSparkv5 extends App {
 
-  import RoaringOXColoring2.start
+  import NoSparkv5.start
 
-  val conf = new SparkConf().setMaster("local[*]").
-    setAppName("RoaringOXColoring2")
-    .set("spark.driver.maxResultSize", "10g")
-  val sc = new SparkContext(conf)
-  sc.setLogLevel("OFF")
-  println(s"Printing sc.appname : ${sc.appName}")
-  println(s"Printing default partitions : ${sc.defaultMinPartitions}")
-  println(s"Printing sc.master : ${sc.master}")
-  println(s"Printing sc.sparkUser : ${sc.sparkUser}")
-  println(s"Printing sc.resources : ${sc.resources}")
-  println(s"Printing sc.deploymode : ${sc.deployMode}")
-  println(s"Printing sc.defaultParallelism : ${sc.defaultParallelism}")
-  println(s"Printing spark.driver.maxResultSize : ${sc.getConf.getOption("spark.driver.maxResultSize")}")
-  println(s"Printing spark.driver.memory : ${sc.getConf.getOption("spark.driver.memory")}")
-  println(s"Printing spark.executor.memory : ${sc.getConf.getOption("spark.executor.memory")}")
-  println(s"Printing spark.serializer : ${sc.getConf.getOption("spark.serializer")}")
-  println(s"Printing sc.conf : ${sc.getConf}")
-  println(s"Printing boolean sc.islocal : ${sc.isLocal}")
-  println("RoaringOXColoring2")
-
-  var n = 3
-  var t = 2
-  var v = 2
+  var n = 8
+  var t = 7
+  var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
+  compressRuns = true
+  val tests = start(n, t, v, 200000, "OC") //4000 pour 100 2 2
 
-  compressRuns = false
-  val maxColor = start(n, t, v, sc, 100000, "OC") //4000 pour 100 2 2
-  println("We have " + maxColor + " tests")
+//  println("We have " + tests.size + " tests")
+//  println("Printing the tests....")
+//  tests foreach (utils.print_helper(_))
+//
+//  println("\n\nVerifying test suite ... ")
+//  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
 
 }

@@ -1,22 +1,23 @@
 package enumerator
 
-import central.{_step}
+import central._step
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
+import utils.utils.{numberParamVectors, numberTWAYCombos, print_helper}
+
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
 
 /**
-  * Edmond La Chance UQAC 2020
-  * This singleton object contains functions that describe a distributed enumerator of combinations (t-way or Phi-way combos)
-  * By using Buffer[Char] instead of Array[Char], we can use Arrays as keys in Apache Spark
+  * Le but de cet objet est d'offrir les fonctions qui génèrent les combinaisons t-way ou phi-way.
+  * L'objet gère également un shuffle depuis un seed, + une numéroration optimale des combinaisons pour les algorithmes
+  * Il peut être préférable de ne pas mettre en cache le RDD résultant de cet enumérateur, afin de sauver de l'espace RAM.
   */
+object enumerator extends Serializable
+{
 
-import utils.utils._
-
-object distributed_enumerator extends Serializable {
-
+  var count = 0 //total count
   var debug = false
-
   object Helpers {
 
     implicit class dodo(x: Array[Char]) {
@@ -26,7 +27,6 @@ object distributed_enumerator extends Serializable {
         s
       }
     }
-
   }
 
   /*
@@ -34,6 +34,95 @@ object distributed_enumerator extends Serializable {
   (key, values.groupBy(identity).mapValues(_.size).toArray)
 }
    */
+
+  /**
+    * This function generates the t-way combos if you give the right parameters.
+    * This function does not cache the RDD by default. Therefore, if you collect, fold, reduce or do any action using this RDD
+    * Spark will delete it from memory after using it. Cache(), Checkpoint or persist the RDD yourself to avoid this.
+    *
+    * @param n
+    * @param t
+    * @param v
+    * @param sc SparkContext
+    * @return RDD of combos
+    */
+  def localGenCombos(n: Int, t: Int, v: Int, seed: Long) = {
+
+    //Step 1 : Cover t parameters
+    val steps = generate_all_steps(n, t)
+    val r2 = steps.par.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
+    var combosArr = r2.flatMap(pv => generate_vc(pv, t, v)).toBuffer //removed cache here. Functions have to cache on their own
+
+    count = combosArr.size
+
+    //On shuffle toute la collection, et on la numérote
+    Random.setSeed(seed)
+    combosArr = Random.shuffle(combosArr)
+
+    //On numérote le tout
+    var counter = -1L
+    val ret =  combosArr.map( elem => {
+      counter+=1
+      (elem, counter)
+    })
+      ret.toArray
+  }
+
+  /**
+    * Return only a chunk of combos
+    */
+  def chunk(n: Int, t: Int, v: Int, seed: Long, i: Long, chunkSize: Int) =
+  {
+
+    //Step 1 : Cover t parameters
+    val steps = generate_all_steps(n, t)
+    val r2 = steps.par.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
+    var combosArr = r2.flatMap(pv => generate_vc(pv, t, v)).toBuffer //removed cache here. Functions have to cache on their own
+
+    count = combosArr.size
+
+    //On shuffle toute la collection, et on la numérote
+    Random.setSeed(seed)
+    combosArr = Random.shuffle(combosArr)
+
+    //On numérote le tout
+    var counter = -1L
+    val ret =  combosArr.map( elem => {
+      counter+=1
+      (elem, counter)
+    })
+    ret.toArray
+
+    //Filter the combos we color in the next OrderColoring iteration
+    println("We are now  creating the chunk we need...")
+    val chunkk = ret.flatMap(elem => {
+      if (elem._2 < i + chunkSize && elem._2 >= i) { //if chunksize = 10k, then  i < 10001 and 1 >=1. 2ème itération  < 20001 et >=10001
+        Some(elem)
+      }
+      else None
+    })
+
+    chunkk.toArray
+  }
+
+  /** Keep t characters in the array
+    * Returns a new array?? gotta test this */
+  def cutArray(tab: Array[Char], t: Int): Array[Char] = {
+    tab.slice(tab.length - t, tab.length)
+  }
+
+  /** Generate an empty vector. Used by the tway combo generator */
+  def generate_empty(n: Int): Array[Char] = {
+    //Create initial vector
+    var tab = new Array[Char](n)
+    for (i <- 0 until n) {
+      tab(i) = '0'
+    }
+
+    //Fill the t last digits with 1
+    fill_lastdigits('1', tab, n)
+    tab
+  }
 
 
   /**
@@ -559,48 +648,6 @@ object distributed_enumerator extends Serializable {
 
 
 
-  /**
-    * This function generates the t-way combos if you give the right parameters.
-    * This function does not cache the RDD by default. Therefore, if you collect, fold, reduce or do any action using this RDD
-    * Spark will delete it from memory after using it. Cache(), Checkpoint or persist the RDD yourself to avoid this.
-    *
-    * @param n
-    * @param t
-    * @param v
-    * @param sc SparkContext
-    * @return RDD of combos
-    */
-  def fastGenCombos(n: Int, t: Int, v: Int, sc: SparkContext): RDD[Array[Char]] = {
-
-    //Step 1 : Cover t parameters
-    val steps = generate_all_steps(n, t)
-    val r1 = sc.makeRDD(steps) //Parallelize the steps
-    val r2 = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
-    var combosRDD = r2.flatMap(pv => generate_vc(pv, t, v)) //removed cache here. Functions have to cache on their own
-    combosRDD
-  }
-
-
-  /** Keep t characters in the array
-    * Returns a new array?? gotta test this */
-  def cutArray(tab: Array[Char], t: Int): Array[Char] = {
-    tab.slice(tab.length - t, tab.length)
-  }
-
-  /** Generate an empty vector. Used by the tway combo generator */
-  def generate_empty(n: Int): Array[Char] = {
-    //Create initial vector
-    var tab = new Array[Char](n)
-    for (i <- 0 until n) {
-      tab(i) = '0'
-    }
-
-    //Fill the t last digits with 1
-    fill_lastdigits('1', tab, n)
-    tab
-  }
-
-
   /** Do the horizontal extension for only one test
     * We supply the number of values. This number can vary if we a number of variables that varies with the parameter.
     * We add the new element at the beginning of the array (bigger parameter = early in the array) */
@@ -659,5 +706,6 @@ object distributed_enumerator extends Serializable {
     //Now we have to turn the combo array to an Integer value.
     results.toArray
   }
+
 
 }

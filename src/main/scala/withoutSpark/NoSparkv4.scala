@@ -1,15 +1,15 @@
 package withoutSpark
 
-import central.gen.filename
+import central.gen.{filename, verifyTestSuite}
 import cmdlineparser.TSPARK.compressRuns
 import com.acme.BitSet
 import enumerator.distributed_enumerator.fastGenCombos
-import org.apache.spark.{SparkConf, SparkContext}
+import ordercoloring.OrderColoring.coloringToTests
 import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
 import org.roaringbitmap.RoaringBitmap
 import progressivecoloring.progressive_coloring.assign_numberClauses
 import utils.utils
-
 import scala.util.Random
 
 /**
@@ -180,7 +180,18 @@ object NoSparkv4 extends Serializable {
     println(s"We did a total of $totalIterations iterations, which is $percent% of total")
     println(s"We also colored $vertexPerIteration vertices per iteration on average")
 
-    maxColor
+    //Create tests now
+    val bcastcolors = sc.broadcast(colors)
+    val properFormRDD = sc.makeRDD(combosNumbered).map(elem => {
+      val id = elem._2
+      val color = bcastcolors.value(id.toInt)
+      (color, elem._1)
+    })
+
+    //Transform into tests
+    val tests =  coloringToTests(properFormRDD)
+
+    (maxColor, tests)
   }
 
 
@@ -620,8 +631,8 @@ object NoSparkv4 extends Serializable {
     * @param sc
     * @return
     */
-  def withoutSpark(n: Int, t: Int, v: Int, sc: SparkContext,
-                   chunkSize: Int = 4000, algorithm: String = "OC"): Int = {
+  def start(n: Int, t: Int, v: Int, sc: SparkContext,
+                   chunkSize: Int = 4000, algorithm: String = "OC") = {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
@@ -637,23 +648,25 @@ object NoSparkv4 extends Serializable {
 
     val t1 = System.nanoTime()
 
-    val maxColor = fastcoloring(fastGenCombos(n, t, v, sc).cache(), sc, chunkSize, n, v, algorithm)
+    val result = fastcoloring(fastGenCombos(n, t, v, sc), sc, chunkSize, n, v, algorithm)
 
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
+
+    val maxColor = result._1
 
     pw.append(s"$t;$n;$v;WITHOUTSPARK_ROARING;algorithm=$algorithm;$time_elapsed;$maxColor\n")
     println(s"$t;$n;$v;WITHOUTSPARK_ROARING;algorithm=$algorithm;$time_elapsed;$maxColor\n")
     pw.flush()
 
     //Return the test suite
-    maxColor
+    result._2
   }
 }
 
 object testNoSparkv4 extends App {
 
-  import NoSparkv4.withoutSpark
+  import NoSparkv4.start
 
   val conf = new SparkConf().setMaster("local[*]").
     setAppName("Without Spark v4 avec RoaringBitmap partout")
@@ -675,13 +688,19 @@ object testNoSparkv4 extends App {
   println(s"Printing boolean sc.islocal : ${sc.isLocal}")
   println("Without Spark Version 4")
 
-  var n = 8
+  var n = 10
   var t = 7
-  var v = 4
+  var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = true
-  val maxColor = withoutSpark(n, t, v, sc, 200000, "OC") //4000 pour 100 2 2
-  println("We have " + maxColor + " tests")
+  val tests = start(n, t, v, sc, 200000, "OC") //4000 pour 100 2 2
+
+  println("We have " + tests.size + " tests")
+  println("Printing the tests....")
+  tests foreach (utils.print_helper(_))
+
+  println("\n\nVerifying test suite ... ")
+  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
 
 }
