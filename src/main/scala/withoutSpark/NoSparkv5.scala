@@ -3,6 +3,7 @@ import central.gen.filename
 import cmdlineparser.TSPARK.compressRuns
 import com.acme.BitSet
 import enumerator.enumerator.chunk
+import ordercoloring.OrderColoring.mergeTests
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
@@ -20,12 +21,37 @@ object NoSparkv5 extends Serializable {
     *
     */
 
+  /**
+    * From a collection of colored combos, we create the tests
+    * @param coloredCombos
+    */
+  def transformToTests(colors: Array[Int], someCombos: Array[(Array[Char], Long)]) =
+    {
+      //Create tests now
+      val properForm: Array[(Int, Array[Char])] = someCombos.map(elem => {
+        val id = elem._2
+        val color = colors(id.toInt)
+        (color, elem._1)
+      })
+
+      val hashtable = scala.collection.mutable.HashMap.empty[Int,Array[Char]]
+
+      properForm.foreach( elem => {
+        val color = elem._1
+        if (hashtable.contains(color)) { //fusion
+          hashtable(color) = mergeTests( hashtable(color), elem._2).get
+        }
+        else hashtable(color) = elem._2
+      })
+      hashtable.toArray.map(  elem => elem._2)
+    }
+
   def fastcoloring(n: Int, t: Int, v: Int,
                    chunkSize: Int,
                    algorithm: String = "OC") = {
 
     val seed = System.nanoTime() //on peut utiliser une valeur debug ici
-    var someCombos = chunk(n,t,v, seed, 0, 1)
+    var someCombos: Array[(Array[Char], Long)] = chunk(n,t,v, seed, 0, 1)
     import enumerator.enumerator.count
     val colors = new Array[Int](count.toInt)
     var totalIterations = 0
@@ -149,7 +175,9 @@ object NoSparkv5 extends Serializable {
     println(s"We did a total of $totalIterations iterations, which is $percent% of total")
     println(s"We also colored $vertexPerIteration vertices per iteration on average")
 
-    (maxColor)
+    val tests = transformToTests(colors, someCombos)
+
+    (tests, maxColor)
   }
 
 
@@ -589,7 +617,7 @@ object NoSparkv5 extends Serializable {
     * @return
     */
   def start(n: Int, t: Int, v: Int,
-            chunkSize: Int = 4000, algorithm: String = "OC") = {
+            chunkSize: Int = 4000, algorithm: String = "OC", seed: Long) = {
     val expected = utils.numberTWAYCombos(n, t, v)
     import cmdlineparser.TSPARK.compressRuns
 
@@ -603,7 +631,6 @@ object NoSparkv5 extends Serializable {
     import java.io._
     val pw = new PrintWriter(new FileOutputStream(filename, true))
 
-    val seed = System.nanoTime()
 
     val t1 = System.nanoTime()
 
@@ -612,14 +639,14 @@ object NoSparkv5 extends Serializable {
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
 
-    val maxColor = result
+    val maxColor = result._2
 
     pw.append(s"$t;$n;$v;NO_SPARK_ROARING;algorithm=$algorithm;$time_elapsed;$maxColor\n")
     println(s"$t;$n;$v;NO_SPARK_ROARING;algorithm=$algorithm;$time_elapsed;$maxColor\n")
     pw.flush()
 
     //Return the test suite
-    result
+    result._1
   }
 }
 
@@ -627,19 +654,21 @@ object testNoSparkv5 extends App {
 
   import NoSparkv5.start
 
-  var n = 8
-  var t = 7
-  var v = 4
+  var n = 100
+  var t = 2
+  var v = 2
+
+  val seed = System.nanoTime()
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = true
-  val tests = start(n, t, v, 200000, "OC") //4000 pour 100 2 2
+  val tests = start(n, t, v, 200000, "OC", seed) //4000 pour 100 2 2
 
-//  println("We have " + tests.size + " tests")
-//  println("Printing the tests....")
-//  tests foreach (utils.print_helper(_))
-//
-//  println("\n\nVerifying test suite ... ")
-//  println(verifyTestSuite(tests, fastGenCombos(n, t, v, sc), sc))
+  println("We have " + tests.size + " tests")
+  println("Printing the tests....")
+  tests foreach (utils.print_helper(_))
+
+  println("\n\nVerifying test suite ... ")
+  //println(verifyTestSuite(tests, localGenCombos(n, t, v, seed) )
 
 }
