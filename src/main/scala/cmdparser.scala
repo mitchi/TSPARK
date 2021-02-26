@@ -1,16 +1,11 @@
 package cmdlineparser
 
-import java.io.File
-import java.nio.file.Paths
-import cmdline.MainConsole.args2maps
 import cmdline.resume_info
-import cmdlineparser.TSPARK.CommonOpt
+import enumerator.distributed_enumerator._
 import org.apache.spark.{SparkConf, SparkContext}
 import org.backuity.clist._
-import enumerator.distributed_enumerator._
-import org.apache.spark.sql.SparkSession
 
-import Console._
+import scala.Console._
 
 object TSPARK {
 
@@ -293,28 +288,31 @@ object TSPARK {
     println(s"Printing spark.driver.maxResultSize : ${sc.getConf.getOption("spark.driver.maxResultSize")}")
     println(s"Printing spark.driver.memory : ${sc.getConf.getOption("spark.driver.memory")}")
     println(s"Printing spark.executor.memory : ${sc.getConf.getOption("spark.executor.memory")}")
+
+
     println(s"Printing spark.serializer : ${sc.getConf.getOption("spark.serializer")}")
+    println(s"Printing spark.kryoserializer.buffer.max : ${sc.getConf.getOption("spark.kryoserializer.buffer.max")}")
+    println(s"Printing spark.kryo.registrator : ${sc.getConf.getOption("spark.kryo.registrator")}")
+    println(s"Printing spark.kryo.unsafe : ${sc.getConf.getOption("spark.kryo.unsafe")}")
+
 
     println(s"Printing sc.conf : ${sc.getConf}")
     //println(s"Printing spark.conf : ${spark.conf}")
     println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
-    import central.gen.singlethreadcoloring
-    import central.gen.verifyTS
-    import central.gen.simple_hypergraphcover
-    import central.gen.distributed_graphcoloring
+    import central.gen.{distributed_graphcoloring, simple_hypergraphcover, singlethreadcoloring, verifyTS}
     import ipog.d_ipog._
-    import utils.utils.print_combos_in_order
     import ipog.d_ipog_roaring.distributed_ipog_coloring_roaring
-    import phiwaycoloring.phiway_coloring._
     import phiway_hypergraph.phiway_hypergraph._
+    import phiwaycoloring.phiway_coloring._
+    import utils.utils.print_combos_in_order
 
     choice match {
 
       //Implémentation de Fast Coloring
       case Some(FastColoring) => {
 
-        import BitSetSpark.fastColoringBitSetSpark.distributed_fastcoloring_bitset_spark
+        import OXRoaring.RoaringOXColoring2._
 
         val n = FastColoring.n
         val t = FastColoring.t
@@ -343,15 +341,16 @@ object TSPARK {
         val algorithm = FastColoring.algorithm //Default is OC, Order Coloring
         compressRuns = FastColoring.compressRuns
 
-        val tests = distributed_fastcoloring_bitset_spark(n, t, v, sc, chunkSize, algorithm)
+        val tests = start(n, t, v, sc, chunkSize, algorithm)
 
         //Verify the test suite (optional)
-        if (verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
-        }
+//        if (verify == true) {
+//          val combos = fastGenCombos(n, t, v, sc)
+//          val a = verifyTS(combos, tests, sc)
+//          if (a == true) println("Test suite is verified")
+//          else println("This test suite does not cover the combos")
+//        }
+
       }
 
       case Some(Phiwayparser) => {
@@ -392,7 +391,6 @@ object TSPARK {
       /** Distributed IPOG Coloring using Roaring Bitmaps */
       case Some(D_ipog_coloring_roaring) => {
         import cmdline.MainConsole.readSeeding
-        import cmdline.resume_info
 
         val n = D_ipog_coloring_roaring.n
         val t = D_ipog_coloring_roaring.t
