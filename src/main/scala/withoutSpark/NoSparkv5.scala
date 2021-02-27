@@ -8,6 +8,7 @@ import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 import utils.utils
+import withoutSpark.NoSparkv5.verifyTestSuite
 
 /**
   * On essaie de faire la même chose sans Apache Spark, pour voir les temps
@@ -17,6 +18,72 @@ import utils.utils
 object NoSparkv5 extends Serializable {
 
   var debug = false
+
+  /**
+    * On vérifie la suite de tests avec l'algorithme OX
+    *
+    * @param testSuite
+    * @param combos
+    * @return true if the test suite validates
+    */
+  def verifyTestSuite(testSuite: Array[Array[Char]], n: Int, v: Int,
+                      combos: Array[(Array[Char], Long)]): Boolean = {
+
+    val tableau = initTableau(n, v)
+    val etoiles = initTableauEtoiles(n)
+    //Le id du test, on peut le générer ici sans problème
+
+    var i = -1
+    val a = testSuite.map( test => {
+      i+=1
+      (test, i.toLong)
+    })
+
+    addTableauEtoiles(etoiles, a, n, v)
+    addToTableau(tableau, a, n, v)
+
+    //Pour tous les combos
+    val r1 = combos.flatMap(combo => {
+      var i = 0 //quel paramètre?
+      var certifiedInvalidGuys = new RoaringBitmap()
+      //On crée le set des validguys a partir de notre tableau rempli
+      for (it <- combo._1) {
+        if (it != '*') {
+          val paramVal = it - '0'
+          val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
+          val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
+          val invalids = generateOtherList(list, listEtoiles)
+
+          //On ajoute dans la grosse liste des invalides
+          certifiedInvalidGuys or invalids
+
+        }
+        //On va chercher la liste des combos qui ont ce paramètre-valeur
+        i += 1
+      }
+
+      //CertifiedInvalidGuys contient la liste de tous les tests qui ne fonctionnent pas.
+      //On inverse la liste pour obtenir les tests qui fonctionnent
+      //Si cette liste n'est pas vide, il existe un test qui détruit ce combo
+      //Sinon, le combo reste
+
+      certifiedInvalidGuys.flip(0.toLong
+        , certifiedInvalidGuys.last())
+
+      val it = certifiedInvalidGuys.getBatchIterator
+      if (it.hasNext == true) //S'il y a des
+        None
+      else Some(combo)
+    })
+
+    //Si la collection au complète est détruire, c'est bon
+    //Sinon, il reste du travail a faire
+    if (r1.isEmpty == true)
+      true
+    else
+      false
+
+  }
   /**
     *
     */
@@ -33,6 +100,7 @@ object NoSparkv5 extends Serializable {
         val color = colors(id.toInt)
         (color, elem._1)
       })
+
 
       val hashtable = scala.collection.mutable.HashMap.empty[Int,Array[Char]]
 
@@ -193,8 +261,7 @@ object NoSparkv5 extends Serializable {
     * @param etoiles
     * @return
     */
-  def generateOtherList(id: Long,
-                        list: RoaringBitmap,
+  def generateOtherList(list: RoaringBitmap,
                         etoiles: RoaringBitmap) = {
 
     // if (debug == true) println(s"L: $list")
@@ -239,8 +306,7 @@ object NoSparkv5 extends Serializable {
         val paramVal = it - '0'
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
         val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-        val invalids = generateOtherList(id, list, listEtoiles)
-
+        val invalids = generateOtherList(list, listEtoiles)
         //On ajoute dans la grosse liste des invalides
         certifiedInvalidGuys or invalids
 
@@ -653,12 +719,13 @@ object NoSparkv5 extends Serializable {
 object testNoSparkv5 extends App {
 
   import NoSparkv5.start
+  import enumerator.enumerator.localGenCombos
 
-  var n = 100
-  var t = 2
-  var v = 2
+  var n = 8
+  var t = 7
+  var v = 4
 
-  val seed = System.nanoTime()
+  val seed = 20
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = true
@@ -669,6 +736,10 @@ object testNoSparkv5 extends App {
   tests foreach (utils.print_helper(_))
 
   println("\n\nVerifying test suite ... ")
-  //println(verifyTestSuite(tests, localGenCombos(n, t, v, seed) )
+
+  val combos: Array[(Array[Char], Long)] = localGenCombos(n,t,v,seed)
+  val answer = verifyTestSuite(tests, n, v, combos)
+  if (answer == true) println("Test suite is verified")
+  else println("Test suite is not verified")
 
 }
