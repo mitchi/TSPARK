@@ -1,12 +1,15 @@
 package cmdlineparser
-
 import cmdline.resume_info
-import enumerator.distributed_enumerator._
+import enumerator.distributed_enumerator.{fastGenCombos, generateParameterVectors, generateValueCombinations}
+import enumerator.enumerator.localGenCombos
 import org.apache.spark.{SparkConf, SparkContext}
-import org.backuity.clist._
+import org.backuity.clist.{Cli, Command, arg, opt}
+import scala.Console.println
 
-import scala.Console._
-
+/**
+  * On utilise la classe Scala CLIST pour générer l'inteface commandline sans trop se forcer
+  * Par contre, je n'ai pas réussi a gérer les options globales :(
+  */
 object TSPARK {
 
   var useKryo = false
@@ -58,9 +61,6 @@ object TSPARK {
 
   }
 
-
-
-
   object FastColoring extends Command(name = "fastc", description = "Distributed Graph Coloring using the Fast Graph construction algorithm") with CommonOpt {
 
     var t = arg[Int](name = "t",
@@ -72,7 +72,7 @@ object TSPARK {
     var v = arg[Int](name = "v",
       description = "domain size of a parameter")
 
-    var kryo = opt[Boolean](abbrev = "k", name="kryo", description = "Use Kryo serialization instead")
+    var kryo = opt[Boolean](abbrev = "k", name = "kryo", description = "Use Kryo serialization instead")
 
     var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk size, in vertices. Default is 20k", default = 20000)
@@ -102,7 +102,7 @@ object TSPARK {
 
     var algorithm = opt[String](name = "algorithm", description = "The Graph Coloring algorithm (OC or KP)", default = "OC")
     var seeding = opt[String](name = "seeding", description = "Resume the algorithm at param,file", default = "")
-    var save = opt[Boolean](name = "save", abbrev="s", description = "Save the test suite after every parameter")
+    var save = opt[Boolean](name = "save", abbrev = "s", description = "Save the test suite after every parameter")
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
     var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps")
 
@@ -140,7 +140,7 @@ object TSPARK {
     var filename = arg[String](name = "filename", description = "file name of the .dot file")
   }
 
- //Single threaded coloring with Order Coloring
+  //Single threaded coloring with Order Coloring
   object Color extends Command(name = "color",
     description = "Single Threaded Graph Coloring") with CommonOpt {
 
@@ -276,21 +276,21 @@ object TSPARK {
     //sc.setLogLevel("OFF")
 
     //https://cdn.vanderbilt.edu/vu-wp0/wp-content/uploads/sites/157/2017/10/26210455/GPU_Cluster4.pdf
-   // val spark = SparkSession
-  //    .builder
+    // val spark = SparkSession
+    //    .builder
     //  .appName("SparkLR")
     //  .getOrCreate()
 
-    var sc : SparkContext = null
+    var sc: SparkContext = null
 
     try {
-      sc =  SparkContext.getOrCreate()
+      sc = SparkContext.getOrCreate()
       if (logLevelError == true)
         sc.setLogLevel("ERROR")
     }
     catch {
       case _ => println("Looks like the program is local, and not launched from a cluster. We will be instantiating a LOCAL[*] CLUSTER")
-      val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK")
+        val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK")
         sc = SparkContext.getOrCreate(conf) //Create a new SparkContext or get the existing one (Spark Submit)
         if (logLevelError == true)
           sc.setLogLevel("ERROR")
@@ -334,9 +334,7 @@ object TSPARK {
 
       //Implémentation de Fast Coloring
       case Some(LocalColoring) => {
-
-        import withoutSpark.NoSparkv4._
-
+        import withoutSpark.NoSparkv5._
         val n = LocalColoring.n
         val t = LocalColoring.t
         val v = LocalColoring.v
@@ -347,14 +345,20 @@ object TSPARK {
         compressRuns = LocalColoring.compressRuns
         val bitset = LocalColoring.bitset
 
-        val tests = start(n, t, v, sc, chunkSize, algorithm)
+        println("Stopping the SparkContext & calling garbage collection")
+        sc.stop() //We don't need the SparkContext
+        sc = null
+        System.gc()
+
+        val seed = System.nanoTime()
+        val tests = start(n, t, v, chunkSize, algorithm, seed)
 
         //Verify the test suite (optional)
         if (verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
+          val combos: Array[(Array[Char], Long)] = localGenCombos(n, t, v, seed)
+          val answer = fastVerifyTestSuite(tests, n, v, combos)
+          if (answer == true) println("Test suite is verified")
+          else println("Test suite is not verified")
         }
       }
 
@@ -369,20 +373,20 @@ object TSPARK {
 
         useKryo = FastColoring.kryo
 
-          if (useKryo == true) {
-            println("Using the Kryo Serializer...")
-            println("Using a Custom registrator for Kryro for Roaring bitmaps")
-            println("Using spark.kryoserializer.buffer.max=2047m")
+        if (useKryo == true) {
+          println("Using the Kryo Serializer...")
+          println("Using a Custom registrator for Kryro for Roaring bitmaps")
+          println("Using spark.kryoserializer.buffer.max=2047m")
 
-            sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
-            sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
-            sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
+          sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+          sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+          sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
 
-            sc.getConf.set("spark.kryo.unsafe", "true") //default false
-            sc.getConf.set("spark.broadcast.compress", "false")
-            sc.getConf.set("spark.checkpoint.compress", "true")
-          }
-          else println("We are not using Kryo Serialization. Use the parameter --kryo in order to use it")
+          sc.getConf.set("spark.kryo.unsafe", "true") //default false
+          sc.getConf.set("spark.broadcast.compress", "false")
+          sc.getConf.set("spark.checkpoint.compress", "true")
+        }
+        else println("We are not using Kryo Serialization. Use the parameter --kryo in order to use it")
 
         save = FastColoring.save
         val chunkSize = FastColoring.chunkSize
@@ -393,12 +397,12 @@ object TSPARK {
         val tests = start(n, t, v, sc, chunkSize, algorithm)
 
         //Verify the test suite (optional)
-//        if (verify == true) {
-//          val combos = fastGenCombos(n, t, v, sc)
-//          val a = verifyTS(combos, tests, sc)
-//          if (a == true) println("Test suite is verified")
-//          else println("This test suite does not cover the combos")
-//        }
+        //        if (verify == true) {
+        //          val combos = fastGenCombos(n, t, v, sc)
+        //          val a = verifyTS(combos, tests, sc)
+        //          if (a == true) println("Test suite is verified")
+        //          else println("This test suite does not cover the combos")
+        //        }
 
       }
 
@@ -644,8 +648,4 @@ object TSPARK {
         println("nothing done")
     }
   } //fin main function
-} //fin object main
-
-
-
-
+}

@@ -8,7 +8,7 @@ import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 import utils.utils
-import withoutSpark.NoSparkv5.verifyTestSuite
+import withoutSpark.NoSparkv5.fastVerifyTestSuite
 
 /**
   * On essaie de faire la même chose sans Apache Spark, pour voir les temps
@@ -26,8 +26,8 @@ object NoSparkv5 extends Serializable {
     * @param combos
     * @return true if the test suite validates
     */
-  def verifyTestSuite(testSuite: Array[Array[Char]], n: Int, v: Int,
-                      combos: Array[(Array[Char], Long)]): Boolean = {
+  def fastVerifyTestSuite(testSuite: Array[Array[Char]], n: Int, v: Int,
+                          combos: Array[(Array[Char], Long)]): Boolean = {
 
     val tableau = initTableau(n, v)
     val etoiles = initTableauEtoiles(n)
@@ -721,9 +721,9 @@ object testNoSparkv5 extends App {
   import NoSparkv5.start
   import enumerator.enumerator.localGenCombos
 
-  var n = 8
+  var n = 10
   var t = 7
-  var v = 4
+  var v = 2
 
   val seed = 20
 
@@ -733,12 +733,12 @@ object testNoSparkv5 extends App {
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
-  tests foreach (utils.print_helper(_))
+  //tests foreach (utils.print_helper(_))
 
   println("\n\nVerifying test suite ... ")
 
   val combos: Array[(Array[Char], Long)] = localGenCombos(n,t,v,seed)
-  val answer = verifyTestSuite(tests, n, v, combos)
+  val answer = fastVerifyTestSuite(tests, n, v, combos)
   if (answer == true) println("Test suite is verified")
   else println("Test suite is not verified")
 
