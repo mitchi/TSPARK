@@ -3,9 +3,13 @@ import central.gen.{isComboHere2, progressive_filter_combo}
 import cmdlineparser.TSPARK.resume
 import enumerator.distributed_enumerator.{fastGenCombos, genPartialCombos, growby1}
 import org.apache.spark.SparkContext
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
+import org.roaringbitmap.RoaringBitmap
 import roaringcoloring.roaring_coloring.coloring_roaring
 import utils.utils.{containsStars, numberTWAYCombos, print_helper, saveTestSuite, takeM}
+import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, generateOtherList, initTableau, initTableauEtoiles}
+
 import scala.collection.mutable.ArrayBuffer
 
 class dipog_coloring extends Serializable
@@ -14,6 +18,71 @@ class dipog_coloring extends Serializable
   val filename = "results.txt"
   var debug = false
   import cmdlineparser.TSPARK.save //Variable globale save, qui existe dans l'autre source file
+
+
+  /**
+    * Fast cover using the OX algorithm
+    *
+    * Ici, on a la situation suivante:
+    *
+    * On a un grand nombre de tests qui doivent être étendus de 1 paramètre.
+    * On doit donc faire un grand nombre de comparaisons avec nos combos, pour trouver les tests qui sont compatibles avec eux.
+    *
+    * Ici, on va utiliser remplacer ces comparaisons de STRING par l'algorithme OX.
+    * Donc, au lieu d'avoir combo X nbrTests comparaisons pour chaque combo, on va avoir combo + temps OX
+    * Ce qui est largement mieux
+    *
+    */
+  def genTables(someTests: Array[Array[Char]], n: Int, v : Int) = {
+  {
+    val tableau: Array[Array[RoaringBitmap]] = initTableau(n, v)
+    val etoiles: Array[RoaringBitmap] = initTableauEtoiles(n)
+    //Le id du test, on peut le générer ici sans problème
+    var i = -1
+    val a = someTests.map( test => {
+      i+=1
+      (test, i.toLong)
+    })
+
+    addTableauEtoiles(etoiles, a, n, v)
+    addToTableau(tableau, a, n, v)
+
+    (tableau, etoiles)
+  }
+
+    /**
+      * On trouve les tests qui sont compatibles avec le combo, en utilisant l'algorithme OX
+      * On retourne la liste de ces tests
+      * @param combo
+      * @param tableau
+      * @param etoiles
+      */
+  def findValid(combo : Array[Char],
+                tableau: Array[Array[RoaringBitmap]],
+                etoiles: Array[RoaringBitmap]) = {
+
+    var i = 0 //quel paramètre?
+    var certifiedInvalidGuys = new RoaringBitmap()
+
+    for (it <- combo) {
+      if (it != '*') {
+        val paramVal = it - '0'
+        val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
+        val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
+        val invalids = generateOtherList(list, listEtoiles)
+        //On ajoute dans la grosse liste des invalides
+        certifiedInvalidGuys or invalids
+      } //fin du if pour le skip étoile
+      i += 1
+    } //fin for pour chaque paramètre du combo
+
+    //On va chercher la liste de tous les tests valides
+    certifiedInvalidGuys.flip(0.toLong
+      , certifiedInvalidGuys.last())
+
+    certifiedInvalidGuys
+  }
+
 
   /**
     * On utilise cette fonction pour faire le pont entre la phase de Horizontal Growth, et la phase de Vertical Growth
@@ -96,7 +165,9 @@ class dipog_coloring extends Serializable
       if (someTests.size < m) m = someTests.size
 
       //Broadcast the tests
-      val someTests_bcast = sc.broadcast(someTests)
+      val someTests_bcast: Broadcast[ArrayBuffer[Array[Char]]] = sc.broadcast(someTests)
+
+      //genTables(someTests.toArray, n, v)
 
       val s1 = newCombos.mapPartitions(partition => {
         var hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
