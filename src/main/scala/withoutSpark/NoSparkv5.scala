@@ -19,6 +19,25 @@ object NoSparkv5 extends Serializable {
 
   var debug = false
 
+
+  def generateOtherListDelete(list: RoaringBitmap,
+                        etoiles: RoaringBitmap, nTests: Int) = {
+
+    // if (debug == true) println(s"L: $list")
+    // if (debug == true) println(s"E: $etoiles")
+    val possiblyValidGuys = list.clone()
+    possiblyValidGuys.or(etoiles)
+
+    possiblyValidGuys.flip(0.toLong
+      , nTests)
+
+    //if (debug == true) println(s"|: $possiblyValidGuys")
+
+    //if (debug == true)println(s"^: $possiblyValidGuys")
+    possiblyValidGuys
+  }
+
+
   /**
     * On vérifie la suite de tests avec l'algorithme OX
     *
@@ -29,6 +48,7 @@ object NoSparkv5 extends Serializable {
   def fastVerifyTestSuite(testSuite: Array[Array[Char]], n: Int, v: Int,
                           combos: Array[(Array[Char], Long)]): Boolean = {
 
+    val nTests = testSuite.size
     val tableau = initTableau(n, v)
     val etoiles = initTableauEtoiles(n)
     //Le id du test, on peut le générer ici sans problème
@@ -52,7 +72,7 @@ object NoSparkv5 extends Serializable {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
           val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-          val invalids = generateOtherList(list, listEtoiles)
+          val invalids = generateOtherListDelete(list, listEtoiles, nTests)
 
           //On ajoute dans la grosse liste des invalides
           certifiedInvalidGuys or invalids
@@ -68,7 +88,7 @@ object NoSparkv5 extends Serializable {
       //Sinon, le combo reste
 
       certifiedInvalidGuys.flip(0.toLong
-        , certifiedInvalidGuys.last())
+        , nTests)
 
       val it = certifiedInvalidGuys.getBatchIterator
       if (it.hasNext == true) //S'il y a des
