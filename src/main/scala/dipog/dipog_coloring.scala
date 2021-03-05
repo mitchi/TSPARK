@@ -86,10 +86,10 @@ object dipog_coloring extends Serializable {
         if (it != '*') {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-          println("list is " + list.toString)
+         // println("list is " + list.toString)
             val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
             val invalids = generateOtherDelete(list, listEtoiles, numberOfTests)
-            println("invalids is " + invalids.toString)
+         //   println("invalids is " + invalids.toString)
             //On ajoute dans la grosse liste des invalides
             certifiedInvalidGuys or invalids
           }
@@ -104,9 +104,13 @@ object dipog_coloring extends Serializable {
         , numberOfTests)
 
       val it = certifiedInvalidGuys.getBatchIterator
-      if (it.hasNext == true) //S'il y a des
+      if (it.hasNext == true) {
+        println("Le combo "+print_helper2(combo)+" est détruit par les tests")
         None
-      else Some(combo)
+      } else {
+        println("Le combo "+print_helper2(combo)+" survit")
+        Some(combo)
+      }
     })
     //On retourne le RDD (maintenant filtré))
     r1
@@ -301,6 +305,8 @@ object dipog_coloring extends Serializable {
       var someTests = takeM(tests, m, i)
       if (someTests.size < m) m = someTests.size
       println(s"Taking a chunk of m=$m tests to extend...")
+      println("Here are the tests of the chunk:")
+      someTests.foreach( print_helper(_))
 
       //Broadcast the tests
       println("Adding the tests of the chunk to the database...")
@@ -406,32 +412,44 @@ object dipog_coloring extends Serializable {
         //Todo: ajouter la version plus rapide
         //Ca fonctionne avec le vieux filter!
         //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500)
-        newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc)
+        newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc).localCheckpoint()
 
-        //Build a list of tests that did not cover combos
-        for (i <- 0 until someTests.size) {
-          var found = false
-          loop
+       println("Impression des combos après le delete")
+       val tempArray = newCombos.collect()
+       tempArray.foreach( print_helper(_))
 
-          def loop(): Unit = {
-            for (k <- 0 until res2.size) {
-              if (res2(k)._1 == i) {
-                found = true
-                return
-              }
-            }
-          }
+//        //Build a list of tests that did not cover combos
+//        for (i <- 0 until someTests.size) {
+//          var found = false
+//          loop
+//
+//          def loop(): Unit = {
+//            for (k <- 0 until res2.size) {
+//              if (res2(k)._1 == i) {
+//                found = true
+//                return
+//              }
+//            }
+//          }
+//
+//          //Add the test, with a star
+//          if (found == false) {
+//            val testMeat = someTests(i)
+//            val newTest = growby1(testMeat, '*')
+//            newTests += newTest
+//          }
+//        }
 
-          //Add the test, with a star
-          if (found == false) {
-            val testMeat = someTests(i)
-            val newTest = growby1(testMeat, '*')
-            newTests += newTest
-          }
-        }
+        //newCombos = newCombos.localCheckpoint()
 
-        newCombos = newCombos.localCheckpoint()
+        println("On ajoute les tests dans newTests aux tests finaux..")
+        println("Tests de newTests...")
+        newTests.foreach( print_helper(_))
+
         finalTests = finalTests ++ newTests //Concatenate the array into final tests
+
+       println("Final tests, apres concatenation des nouveaux tests:")
+       finalTests.foreach( print_helper(_))
 
         i += m
         loop2
