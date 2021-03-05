@@ -1,6 +1,6 @@
 package dipog
 
-import central.gen.{progressive_filter_combo, verifyTestSuite}
+import central.gen.verifyTestSuite
 import cmdlineparser.TSPARK.resume
 import enumerator.distributed_enumerator.{fastGenCombos, genPartialCombos, growby1}
 import org.apache.spark.rdd.RDD
@@ -8,10 +8,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.roaringbitmap.RoaringBitmap
 import roaringcoloring.roaring_coloring.coloring_roaring
 import utils.utils._
-import withoutSpark.NoSparkv5.initTableau
-import withoutSpark.NoSparkv5.initTableauEtoiles
-import withoutSpark.NoSparkv5.addToTableau
-import withoutSpark.NoSparkv5.addTableauEtoiles
+import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, initTableau, initTableauEtoiles}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -20,6 +17,114 @@ object dipog_coloring extends Serializable {
   val filename = "results.txt"
   var debug = false
   import cmdlineparser.TSPARK.save //Variable globale save, qui existe dans l'autre source file
+
+
+  /**
+    * Ici, on a la garantie que list est non-vide.
+    *
+    * @param id
+    * @param list
+    * @param etoiles
+    * @return
+    */
+  def generateOtherDelete(list: RoaringBitmap,
+                        etoiles: RoaringBitmap, numberTests : Long) = {
+
+    val possiblyValidGuys = list.clone()
+    possiblyValidGuys.or(etoiles)
+
+    val last = possiblyValidGuys.last()
+
+    possiblyValidGuys.flip(0.toLong
+      , numberTests)
+
+    println( "after flip : " +  possiblyValidGuys.toString)
+
+    possiblyValidGuys
+  }
+
+  /**
+    * Petit algorithme pour effacer plus rapidement les combos
+    *
+    * @param testSuite
+    * @param combos
+    * @return true if the test suite validates
+    */
+  def fastDeleteCombo(testsToDelete: Array[Array[Char]], v: Int,
+                          combos: RDD[Array[Char]], sc : SparkContext) = {
+
+    val n = testsToDelete(0).size
+    val numberOfTests = testsToDelete.size
+    val tab: Array[Array[RoaringBitmap]] = initTableau(n, v)
+    val et: Array[RoaringBitmap] = initTableauEtoiles(n)
+
+    //Le id du test, on peut le générer ici sans problème
+    var i = -1
+    val a: Array[(Array[Char], Long)] = testsToDelete.map(test => {
+      i+=1
+      (test, i.toLong)
+    })
+
+    addTableauEtoiles(et, a, n, v)
+    addToTableau(tab, a, n, v)
+
+    println("On imprime le tableau apres remplissage")
+    for (i <- 0 until n) { //pour tous les paramètres
+      for (j <- 0 until v) { //pour toutes les valeurs
+        println(s"p$i=$j " + tab(i)(j).toString)
+      }
+    }
+
+    val tableaubcast = sc.broadcast(tab)
+    val etoilesbcast = sc.broadcast(et)
+
+    //Pour tous les combos du RDD
+    val r1 = combos.flatMap(combo => {
+      val tableau = tableaubcast.value
+      val etoiles = etoilesbcast.value
+
+      var i = 0 //quel paramètre?
+      var certifiedInvalidGuys = new RoaringBitmap()
+      //On crée le set des validguys a partir de notre tableau rempli
+      for (it <- combo) {
+        if (it != '*') {
+          val paramVal = it - '0'
+          val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
+
+          println("list is " + list.toString)
+
+          if (!list.isEmpty) {
+            val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
+            val invalids = generateOtherDelete(list, listEtoiles, numberOfTests)
+
+            println("invalids is " + invalids.toString)
+
+            //On ajoute dans la grosse liste des invalides
+            certifiedInvalidGuys or invalids
+          }
+        }
+        //On va chercher la liste des combos qui ont ce paramètre-valeur
+        i += 1
+      }
+
+      //CertifiedInvalidGuys contient la liste de tous les tests qui ne fonctionnent pas.
+      //On inverse la liste pour obtenir les tests qui fonctionnent
+      //Si cette liste n'est pas vide, il existe un test qui détruit ce combo
+      //Sinon, le combo reste
+      certifiedInvalidGuys.flip(0.toLong
+        , numberOfTests)
+
+      val it = certifiedInvalidGuys.getBatchIterator
+      if (it.hasNext == true) //S'il y a des
+        None
+      else Some(combo)
+    })
+
+    //On retourne le RDD (maintenant filtré))
+    r1
+  }
+
+
 
   /**
     * Fast cover using the OX algorithm
@@ -63,13 +168,13 @@ object dipog_coloring extends Serializable {
     * @return
     */
   def generateOtherList(list: RoaringBitmap,
-                        etoiles: RoaringBitmap) = {
+                        etoiles: RoaringBitmap, nTests: Int) = {
 
     val possiblyValidGuys = list.clone()
     possiblyValidGuys.or(etoiles)
 
     possiblyValidGuys.flip(0.toLong
-      , possiblyValidGuys.last())
+      , nTests)
 
     possiblyValidGuys
   }
@@ -84,7 +189,7 @@ object dipog_coloring extends Serializable {
     */
   def findValid(combo: Array[Char],
                 tableau: Array[Array[RoaringBitmap]],
-                etoiles: Array[RoaringBitmap]) = {
+                etoiles: Array[RoaringBitmap], nTests: Int) = {
 
     var i = 0 //quel paramètre?
     var certifiedInvalidGuys = new RoaringBitmap()
@@ -99,7 +204,7 @@ object dipog_coloring extends Serializable {
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
         if (!list.isEmpty) { //Il faut qu'on aie au moins un élément avec lequel travailler
           val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-          val invalids = generateOtherList(list, listEtoiles)
+          val invalids = generateOtherList(list, listEtoiles, nTests)
           //On ajoute dans la grosse liste des invalides
           certifiedInvalidGuys or invalids
         }
@@ -111,7 +216,7 @@ object dipog_coloring extends Serializable {
     else {
       //On va chercher la liste de tous les tests valides
       certifiedInvalidGuys.flip(0.toLong
-        , certifiedInvalidGuys.last())
+        , nTests)
     //  println("Certified invalid guys for sliced combo: " + print_helper2(slicedCombo))
     //  println(certifiedInvalidGuys)
       Some(certifiedInvalidGuys)
@@ -204,25 +309,27 @@ object dipog_coloring extends Serializable {
 
       // val someTests_bcast: Broadcast[ArrayBuffer[Array[Char]]] = sc.broadcast(someTests)
       val n = tests(0).size
+      val nTests = someTests.size
+
       val tables = genTables(someTests.toArray, n, v)
       val tableau = tables._1
       val etoiles = tables._2
       val etoilesbcast = sc.broadcast(etoiles)
       val tableaubcast = sc.broadcast(tableau)
 
-//      println("On imprime le tableau apres remplissage")
-//      for (i <- 0 until n) { //pour tous les paramètres
-//        for (j <- 0 until v) { //pour toutes les valeurs
-//          println(s"p$i=$j " + tableau(i)(j).toString)
-//        }
-//      }
-//
-//      println("On imprime le tableau etoiles")
-//      var tt = 0
-//      for (elem <- etoiles) {
-//        println(s"p$tt=*" + " " + elem.toString)
-//        tt += 1
-//      }
+      println("On imprime le tableau apres remplissage")
+      for (i <- 0 until n) { //pour tous les paramètres
+        for (j <- 0 until v) { //pour toutes les valeurs
+          println(s"p$i=$j " + tableau(i)(j).toString)
+        }
+      }
+
+      println("On imprime le tableau etoiles")
+      var tt = 0
+      for (elem <- etoiles) {
+        println(s"p$tt=*" + " " + elem.toString)
+        tt += 1
+      }
 
       val s1: RDD[(key_v, Int)] = newCombos.mapPartitions(partition => {
         val hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
@@ -234,7 +341,7 @@ object dipog_coloring extends Serializable {
           val c = combo(0) //Get the version of the combo
 
          // println("The combo " + print_helper2(combo) + " checks the database for possible extension...")
-          val valids: Option[RoaringBitmap] = findValid(combo, tableaubcast.value, etoilesbcast.value)
+          val valids: Option[RoaringBitmap] = findValid(combo, tableaubcast.value, etoilesbcast.value, nTests)
         //  println("OX algorithm complete")
 
           if (valids.isDefined) {
@@ -291,7 +398,9 @@ object dipog_coloring extends Serializable {
 
         //Delete combos using the new tests
         //Todo: ajouter la version plus rapide
-        newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500)
+        //Ca fonctionne avec le vieux filter!
+        //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500)
+        newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc)
 
         //Build a list of tests that did not cover combos
         for (i <- 0 until someTests.size) {
