@@ -136,9 +136,8 @@ object NoSparkv5 extends Serializable {
 
   def fastcoloring(n: Int, t: Int, v: Int,
                    chunkSize: Int,
-                   algorithm: String = "OC") = {
+                   algorithm: String = "OC", seed: Long) = {
 
-    val seed = System.nanoTime() //on peut utiliser une valeur debug ici
     var someCombos: Array[(Array[Char], Long)] = chunk(n,t,v, seed, 0, 1)
     import enumerator.enumerator.count
     val colors = new Array[Int](count.toInt)
@@ -720,7 +719,7 @@ object NoSparkv5 extends Serializable {
 
     val t1 = System.nanoTime()
 
-    val result = fastcoloring(n,t,v, chunkSize, algorithm)
+    val result = fastcoloring(n,t,v, chunkSize, algorithm, seed)
 
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
@@ -738,14 +737,17 @@ object NoSparkv5 extends Serializable {
 
 object testNoSparkv5 extends App {
 
+  var debug = false
+
   import NoSparkv5.start
   import enumerator.enumerator.localGenCombos
 
-  var n = 10
+  var n = 8
   var t = 7
-  var v = 2
+  var v = 4
 
-  val seed = 20
+  val seed = if (debug == true) 20
+             else System.nanoTime()
 
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = true

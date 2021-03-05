@@ -15,7 +15,7 @@ import scala.collection.mutable.ArrayBuffer
 object dipog_coloring extends Serializable {
   //Nom standard pour les résultats
   val filename = "results.txt"
-  var debug = false
+  var debug = true
   import cmdlineparser.TSPARK.save //Variable globale save, qui existe dans l'autre source file
 
 
@@ -32,14 +32,8 @@ object dipog_coloring extends Serializable {
 
     val possiblyValidGuys = list.clone()
     possiblyValidGuys.or(etoiles)
-
-    val last = possiblyValidGuys.last()
-
     possiblyValidGuys.flip(0.toLong
       , numberTests)
-
-    println( "after flip : " +  possiblyValidGuys.toString)
-
     possiblyValidGuys
   }
 
@@ -52,6 +46,9 @@ object dipog_coloring extends Serializable {
     */
   def fastDeleteCombo(testsToDelete: Array[Array[Char]], v: Int,
                           combos: RDD[Array[Char]], sc : SparkContext) = {
+
+    println("On imprime les tests a effacer")
+    testsToDelete.foreach (test => println(print_helper2(test) + "\n"))
 
     val n = testsToDelete(0).size
     val numberOfTests = testsToDelete.size
@@ -80,33 +77,25 @@ object dipog_coloring extends Serializable {
 
     //Pour tous les combos du RDD
     val r1 = combos.flatMap(combo => {
+
       val tableau = tableaubcast.value
       val etoiles = etoilesbcast.value
-
       var i = 0 //quel paramètre?
       var certifiedInvalidGuys = new RoaringBitmap()
-      //On crée le set des validguys a partir de notre tableau rempli
-      for (it <- combo) {
+      for (it <- combo) { //pour tous les paramètres de ce combo
         if (it != '*') {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-
           println("list is " + list.toString)
-
-          if (!list.isEmpty) {
             val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
             val invalids = generateOtherDelete(list, listEtoiles, numberOfTests)
-
             println("invalids is " + invalids.toString)
-
             //On ajoute dans la grosse liste des invalides
             certifiedInvalidGuys or invalids
           }
         }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
-      }
-
       //CertifiedInvalidGuys contient la liste de tous les tests qui ne fonctionnent pas.
       //On inverse la liste pour obtenir les tests qui fonctionnent
       //Si cette liste n'est pas vide, il existe un test qui détruit ce combo
@@ -119,12 +108,9 @@ object dipog_coloring extends Serializable {
         None
       else Some(combo)
     })
-
     //On retourne le RDD (maintenant filtré))
     r1
   }
-
-
 
   /**
     * Fast cover using the OX algorithm
@@ -198,31 +184,36 @@ object dipog_coloring extends Serializable {
     var slicedCombo = combo.slice(1, combo.length)
    // println("Sliced combo is " + print_helper2(slicedCombo))
 
+    if (slicedCombo(0) == '*' && slicedCombo(1) == '1') {
+      println("Debug from here")
+    }
+
     for (it <- slicedCombo) {
       if (it != '*') {
         val paramVal = it - '0'
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-        if (!list.isEmpty) { //Il faut qu'on aie au moins un élément avec lequel travailler
           val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
           val invalids = generateOtherList(list, listEtoiles, nTests)
           //On ajoute dans la grosse liste des invalides
           certifiedInvalidGuys or invalids
-        }
       } //fin du if pour le skip étoile
       i += 1
     } //fin for pour chaque paramètre du combo
 
-    if (certifiedInvalidGuys.isEmpty) {None}
-    else {
-      //On va chercher la liste de tous les tests valides
-      certifiedInvalidGuys.flip(0.toLong
-        , nTests)
-    //  println("Certified invalid guys for sliced combo: " + print_helper2(slicedCombo))
-    //  println(certifiedInvalidGuys)
-      Some(certifiedInvalidGuys)
-    }
-  }
+    //On flip pour avoir l'ensemble des valides
+    certifiedInvalidGuys.flip(0.toLong
+      , nTests)
 
+    val it = certifiedInvalidGuys.getBatchIterator
+    if (it.hasNext == true) {
+      println("Le combo est compatible avec des tests de la BD")
+      Some(certifiedInvalidGuys)
+    } else {
+      println("Le combo n'est PAS compatible avec les tests de la BD")
+      None
+    }
+
+  }
 
   /**
     * On utilise cette fonction pour faire le pont entre la phase de Horizontal Growth, et la phase de Vertical Growth
@@ -276,7 +267,15 @@ object dipog_coloring extends Serializable {
   (Array[Array[Char]], RDD[Array[Char]]) = {
 
     var finalTests = new ArrayBuffer[Array[Char]]()
-    case class key_v(var test: Int, version: Char) //Clé composite: (Numéro du test, et sa version)
+
+    //Clé composite: (Numéro du test, et sa version)
+    case class key_v(var test: Int, version: Char) {
+      override def toString: String = {
+        var output = ""
+        output += s"test: $test version $version count:"
+        output
+      }
+    }
     var newCombos = combos
 
     //Start M at 1% of total test size
@@ -336,11 +335,12 @@ object dipog_coloring extends Serializable {
 
         //Pour chaque combo de cette partition, on trouve les tests possibles
         partition.foreach(combo => {
+
           //val someTests = someTests_bcast.value
           var list = new ArrayBuffer[key_v]()
           val c = combo(0) //Get the version of the combo
 
-         // println("The combo " + print_helper2(combo) + " checks the database for possible extension...")
+         println("The combo " + print_helper2(combo) + " checks the database for possible extension...")
           val valids: Option[RoaringBitmap] = findValid(combo, tableaubcast.value, etoilesbcast.value, nTests)
         //  println("OX algorithm complete")
 
@@ -363,13 +363,19 @@ object dipog_coloring extends Serializable {
                 hashmappp(elem) += 1
               }
             })
+
+            println("On imprime la table de hachage partielle: ")
+            for (elem <- hashmappp) {
+              println(elem)
+            }
+
           }
         })
 
-//          println("On imprime la table de hachage terminée: ")
-//          for (elem <- hashmappp) {
-//            println(elem)
-//          }
+          println("On imprime la table de hachage terminée: ")
+          for (elem <- hashmappp) {
+            println(elem)
+          }
 
           hashmappp.iterator
         })
@@ -582,8 +588,8 @@ object dipog_coloring extends Serializable {
     println(s"Printing sc.conf : ${sc.getConf}")
     println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
-    var n = 10
-    var t = 7
+    var n = 3
+    var t = 2
     var v = 2
 
     import cmdlineparser.TSPARK.compressRuns
