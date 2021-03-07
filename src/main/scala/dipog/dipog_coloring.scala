@@ -50,6 +50,12 @@ object dipog_coloring extends Serializable {
     println("On imprime les tests a effacer")
     testsToDelete.foreach (test => println(print_helper2(test) + "\n"))
 
+    val t = testsToDelete(0)
+    if (t(0) == '1' && t(1) == '0' && t(2) == '1'){
+        var debughere = "truetrue"
+    }
+
+
     val n = testsToDelete(0).size
     val numberOfTests = testsToDelete.size
     val tab: Array[Array[RoaringBitmap]] = initTableau(n, v)
@@ -93,9 +99,9 @@ object dipog_coloring extends Serializable {
             //On ajoute dans la grosse liste des invalides
             certifiedInvalidGuys or invalids
           }
-        }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
+        }
       //CertifiedInvalidGuys contient la liste de tous les tests qui ne fonctionnent pas.
       //On inverse la liste pour obtenir les tests qui fonctionnent
       //Si cette liste n'est pas vide, il existe un test qui détruit ce combo
