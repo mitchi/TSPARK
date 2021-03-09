@@ -4,6 +4,8 @@ import enumerator.distributed_enumerator.{fastGenCombos, generateParameterVector
 import enumerator.enumerator.localGenCombos
 import org.apache.spark.{SparkConf, SparkContext}
 import org.backuity.clist.{Cli, Command, arg, opt}
+import withoutSpark.NoSparkv5.fastVerifyTestSuite
+
 import scala.Console.println
 
 /**
@@ -38,6 +40,29 @@ object TSPARK {
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk of vertices to use for graph coloring. Default is 4000", default = 4000)
     var save = opt[Boolean](name = "save", description = "Save the test suite to a text file")
     var t = opt[Int](name = "t", description = "Generate and join additional clauses using interaction strength t", default = 0)
+  }
+
+
+  object ExperimentalIPOG extends Command(name = "exp",
+    description = "Experimental IPOG coloring") with CommonOpt {
+
+    var t = arg[Int](name = "t",
+      description = "interaction strength")
+
+    var n = arg[Int](name = "n",
+      description = "number of parameters")
+
+    var v = arg[Int](name = "v",
+      description = "domain size of a parameter")
+
+    var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
+    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size in vertices for graph coloring. Default is 20k", default = 20000)
+    var hstep = opt[Int](name = "hstep", description = "Number of horizontal covering iterations. Default is 100", default = -1)
+    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
+    var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
+    var save = opt[Boolean](name = "save", abbrev = "s", description = "Save the test suite to a file")
+    var bitset = opt[Boolean](name = "bitset", abbrev = "b", description = "Use uncompressed bit set as the main data structure")
+    var local = opt[Boolean](name = "local", abbrev = "l", description = "Compute without Apache Spark")
   }
 
   object LocalColoring extends Command(name = "localc",
@@ -267,7 +292,7 @@ object TSPARK {
       .version("1.0.0")
       .withProgramName("TSPARK")
       .withDescription("a distributed testing tool")
-      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, LocalColoring, FastColoring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
+      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, LocalColoring, ExperimentalIPOG, FastColoring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
 
     //Create the Spark Context if it does not already exist
     //The options of Spark can be set using the params of the program
@@ -331,6 +356,36 @@ object TSPARK {
     import utils.utils.print_combos_in_order
 
     choice match {
+
+
+      case Some(ExperimentalIPOG) => {
+
+        import dipog.dipog_coloring2.start
+
+        val n = ExperimentalIPOG.n
+        val t = ExperimentalIPOG.t
+        val v = ExperimentalIPOG.v
+        save = ExperimentalIPOG.save
+        val chunkSize = ExperimentalIPOG.chunkSize
+        val hstep = ExperimentalIPOG.hstep
+        val verify = ExperimentalIPOG.verify
+        val algorithm = ExperimentalIPOG.algorithm //Default is OC, Order Coloring
+        compressRuns = ExperimentalIPOG.compressRuns
+        val bitset = ExperimentalIPOG.bitset
+        val isLocal = ExperimentalIPOG.local
+
+        val seed = System.nanoTime()
+        val tests = start(n, t, v, sc, hstep, chunkSize, algorithm)
+
+        //Verify the test suite (optional)
+        if (verify == true) {
+          val combos: Array[(Array[Char], Long)] = localGenCombos(n, t, v, seed)
+          val answer = fastVerifyTestSuite(tests, n, v, combos)
+          if (answer == true) println("Test suite is verified")
+          else println("Test suite is not verified")
+        }
+
+      }
 
       //Implémentation de Fast Coloring
       case Some(LocalColoring) => {

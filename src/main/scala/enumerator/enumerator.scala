@@ -29,6 +29,7 @@ object enumerator extends Serializable
     }
   }
 
+
   /*
   L.map { case (key, values) =>
   (key, values.groupBy(identity).mapValues(_.size).toArray)
@@ -596,26 +597,21 @@ object enumerator extends Serializable
 
 
   /** Generate partial combos
-    *
     * This is used in the IPOG algorithm to generate the combos, only for the next parameter.
     * What we do is that we generate parameter vectors for (t-1) and then we add this parameter.
-    *
     * */
-  def genPartialCombos(n: Int, t: Int, v: Int, sc: SparkContext): RDD[Array[Char]] = {
+  def genPartialCombos(n: Int, t: Int, v: Int): Array[Array[Char]] = {
     val steps = generate_all_steps(n, t)
-    val r1 = sc.makeRDD(steps) //Parallelize the steps
-    val r2 = r1.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
-    //Add the next parameter
+    val r2 = steps.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
     val r3 = r2.map(growby1(_, '1'))
     val r4 = r3.flatMap(pv => generate_vc(pv, t + 1, v)) //Generate the tway combos
-
-    r4
+    r4.toArray
   }
 
   /**
     * Algorithm : Generate t-1 combos, with the last parameter always being active.
     * To do this, we can generate combos as usual, but we remove any combo without the last parameter being active.
-    *
+    * A quoi sert cette fonction déjà???
     **/
 
   def genPartialCombos2(n: Int, t: Int, v: Int, sc: SparkContext): RDD[Array[Char]] = {
