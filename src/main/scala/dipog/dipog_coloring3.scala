@@ -1,13 +1,8 @@
 package dipog
-import central.gen.verifyTestSuite
-import cmdlineparser.TSPARK.resume
-import enumerator.enumerator.{genPartialCombos, growby1, localGenCombos}
-import org.apache.spark.rdd.RDD
-import org.apache.spark.{SparkConf, SparkContext}
+import enumerator.enumerator.{genPartialCombos, growby1, localGenCombos2, verify}
 import org.roaringbitmap.RoaringBitmap
-import roaringcoloring.roaring_coloring.coloring_roaring
 import utils.utils._
-import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, fastVerifyTestSuite, initTableau, initTableauEtoiles}
+import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, initTableau, initTableauEtoiles}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -49,7 +44,7 @@ object dipog_coloring3 extends Serializable {
     * @return true if the test suite validates
     */
   def fastDeleteCombo(testsToDelete: Array[Array[Char]], v: Int,
-                      combos: RDD[Array[Char]], sc : SparkContext): RDD[Array[Char]] = {
+                      combos: Array[Array[Char]]):Array[Array[Char]] = {
 
     if (testsToDelete.isEmpty) return combos
 
@@ -68,14 +63,11 @@ object dipog_coloring3 extends Serializable {
     addTableauEtoiles(et, a, n, v)
     addToTableau(tab, a, n, v)
 
-    val tableaubcast = sc.broadcast(tab)
-    val etoilesbcast = sc.broadcast(et)
-
     //Pour tous les combos du RDD
     val r1 = combos.flatMap(combo => {
 
-      val tableau = tableaubcast.value
-      val etoiles = etoilesbcast.value
+      val tableau = tab
+      val etoiles = et
       var i = 0 //quel paramètre?
       var certifiedInvalidGuys = new RoaringBitmap()
       for (it <- combo) { //pour tous les paramètres de ce combo
@@ -202,8 +194,7 @@ object dipog_coloring3 extends Serializable {
     * @param tests
     * @return
     */
-  def entergraphcoloring(tests: Array[Array[Char]], combos: RDD[Array[Char]],
-                         sc: SparkContext, chunksize: Int = 20000,
+  def entergraphcoloring(tests: Array[Array[Char]], combos: Array[Array[Char]], chunksize: Int = 20000,
                          algorithm: String = "OC"): Array[Array[Char]] = {
 
     //Union the incomplete tests and the combos. And remove the incomplete tests from the test set
@@ -222,12 +213,12 @@ object dipog_coloring3 extends Serializable {
       else Some(arr)
     })
 
-    var input = combos.collect union incompleteTests
+    var input = combos union incompleteTests
 
     //Sélectionner le bon algorithme ici
-    var coloredTests = coloring_roaring(sc.makeRDD(input), sc, chunksize, algorithm)
-
-    coloredTests ++ testsWithoutStars
+    //var coloredTests = coloring_roaring(input, chunksize, algorithm)
+    //coloredTests ++ testsWithoutStars
+    input
   }
 
 
@@ -242,9 +233,9 @@ object dipog_coloring3 extends Serializable {
     * @param sc
     * @return
     */
-  def horizontalgrowth(tests: Array[Array[Char]], combos: Array[(Array[Char], Long)],
+  def horizontalgrowth(tests: Array[Array[Char]], combos: Array[Array[Char]],
                        v: Int, t: Int, hstep: Int = -1):
-      (Array[Array[Char]], RDD[Array[Char]]) = {
+      (Array[Array[Char]], Array[Array[Char]]) = {
 
     var finalTests = new ArrayBuffer[Array[Char]]()
 
@@ -292,8 +283,8 @@ object dipog_coloring3 extends Serializable {
       newCombos.foreach(combo => {
           //val someTests = someTests_bcast.value
           var list = new ArrayBuffer[key_v]()
-          val c = combo._1(0) //Get the version of the combo
-          val valids: Option[RoaringBitmap] = findValid(combo._1, tableau, etoiles, nTests)
+          val c = combo(0) //Get the version of the combo
+          val valids: Option[RoaringBitmap] = findValid(combo, tableau, etoiles, nTests)
 
           if (valids.isDefined) {
             //Batch iterator ici
@@ -317,7 +308,7 @@ object dipog_coloring3 extends Serializable {
       })
 
       //Find the best version of the tests using the cluster TODO: On peut surement enlever cette étape et remplacer par du code local
-      val map2: Map[Int, Iterable[(key_v, Int)]] = hashmappp.toIterable.groupBy(_._1.test)
+      val map2: Map[Int, Iterable[(key_v, Int)]] = hashmappp.groupBy(_._1.test)
       val res2 = map2.map( elem => {
         var bestVersion = '''
         var bestCount = -1
@@ -340,7 +331,7 @@ object dipog_coloring3 extends Serializable {
       }
 
       //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500).localCheckpoint()
-      newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc).localCheckpoint()
+      newCombos = fastDeleteCombo(newTests.toArray, v, newCombos)
 
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {
@@ -403,7 +394,7 @@ object dipog_coloring3 extends Serializable {
 
     var t1 = System.nanoTime()
     //Horizontal extend all of them
-    var tests = localGenCombos(t, t, v, seed)
+    var tests = localGenCombos2(t, t, v, seed)
 
     loop
 
@@ -413,20 +404,20 @@ object dipog_coloring3 extends Serializable {
       if (i + t == n) return
 
       println("Currently covering parameter : " + (i + t + 1))
-      var newCombos = genPartialCombos(i + t, t - 1, v)
+      var newCombos: Array[Array[Char]] = genPartialCombos(i + t, t - 1, v, seed) //Generate partial combos using the same seed
       println(s" ${newCombos.size} combos to cover")
       println(s" And we currently have ${tests.size} tests")
 
-      val r1 = horizontalgrowth(tests, newCombos, v, t, sc, hstep)
+      val r1 = horizontalgrowth(tests, newCombos, v, t, hstep)
 
       newCombos = r1._2 //Retrieve the combos that are not covered
       tests = r1._1 //Replace the tests
 
-      println(s" ${newCombos.count()} combos remaining , sending to graph coloring")
+      println(s" ${newCombos.size} combos remaining , sending to graph coloring")
 
       //If there are still combos left to cover, apply a vertical growth algorithm
-      if (newCombos.isEmpty() == false) {
-        tests = entergraphcoloring(tests, newCombos, sc, chunksize, algorithm)
+      if (newCombos.size > 0) {
+        tests = entergraphcoloring(tests, newCombos, chunksize, algorithm)
       }
 
       i += 1 //move to another parameter
@@ -469,6 +460,9 @@ object test_dipogcoloring3 extends App {
 
   import cmdlineparser.TSPARK.compressRuns
   import dipog.dipog_coloring3.start
+  import enumerator.enumerator.localGenCombos2
+
+
   compressRuns = true
   var seed = System.nanoTime()
   val tests = start(n, t, v, -1, 100000, "OC", seed)
@@ -478,9 +472,8 @@ object test_dipogcoloring3 extends App {
     //tests foreach (print_helper(_))
 
   println("\n\nVerifying test suite ... ")
-  val combos: Array[(Array[Char], Long)] = localGenCombos(n,t,v,seed)
-  val answer = fastVerifyTestSuite(tests, n, v, combos)
+  val combos = localGenCombos2(n,t,v,seed)
+  val answer = verify(tests, n, v, combos)
   if (answer == true) println("Test suite is verified")
   else println("Test suite is not verified")
-
 }

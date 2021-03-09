@@ -3,7 +3,9 @@ package enumerator
 import central._step
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
+import org.roaringbitmap.RoaringBitmap
 import utils.utils.{numberParamVectors, numberTWAYCombos, print_helper}
+import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, generateOtherListDelete, initTableau, initTableauEtoiles}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
@@ -37,9 +39,78 @@ object enumerator extends Serializable
    */
 
   /**
+    * On vérifie la suite de tests avec l'algorithme OX
+    *
+    * @param testSuite
+    * @param combos
+    * @return true if the test suite validates
+    */
+  def verify(testSuite: Array[Array[Char]], n: Int, v: Int,
+                          combos: Array[Array[Char]]): Boolean = {
+
+    val nTests = testSuite.size
+    val tableau = initTableau(n, v)
+    val etoiles = initTableauEtoiles(n)
+    //Le id du test, on peut le générer ici sans problème
+
+    var i = -1
+    val a = testSuite.map( test => {
+      i+=1
+      (test, i.toLong)
+    })
+
+    addTableauEtoiles(etoiles, a, n, v)
+    addToTableau(tableau, a, n, v)
+
+    //Pour tous les combos
+    val r1 = combos.flatMap(combo => {
+      var i = 0 //quel paramètre?
+      var certifiedInvalidGuys = new RoaringBitmap()
+      //On crée le set des validguys a partir de notre tableau rempli
+      for (it <- combo) {
+        if (it != '*') {
+          val paramVal = it - '0'
+          val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
+          val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
+          val invalids = generateOtherListDelete(list, listEtoiles, nTests)
+
+          //On ajoute dans la grosse liste des invalides
+          certifiedInvalidGuys or invalids
+
+        }
+        //On va chercher la liste des combos qui ont ce paramètre-valeur
+        i += 1
+      }
+
+      //CertifiedInvalidGuys contient la liste de tous les tests qui ne fonctionnent pas.
+      //On inverse la liste pour obtenir les tests qui fonctionnent
+      //Si cette liste n'est pas vide, il existe un test qui détruit ce combo
+      //Sinon, le combo reste
+
+      certifiedInvalidGuys.flip(0.toLong
+        , nTests)
+
+      val it = certifiedInvalidGuys.getBatchIterator
+      if (it.hasNext == true) //S'il y a des
+        None
+      else Some(combo)
+    })
+
+    //Si la collection au complète est détruire, c'est bon
+    //Sinon, il reste du travail a faire
+    if (r1.isEmpty == true)
+      true
+    else
+      false
+
+  }
+
+  /**
     * This function generates the t-way combos if you give the right parameters.
     * This function does not cache the RDD by default. Therefore, if you collect, fold, reduce or do any action using this RDD
     * Spark will delete it from memory after using it. Cache(), Checkpoint or persist the RDD yourself to avoid this.
+    *
+    * This function also numbers
     *
     * @param n
     * @param t
@@ -53,7 +124,6 @@ object enumerator extends Serializable
     val steps = generate_all_steps(n, t)
     val r2 = steps.par.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
     var combosArr = r2.flatMap(pv => generate_vc(pv, t, v)).toBuffer //removed cache here. Functions have to cache on their own
-
     count = combosArr.size
 
     //On shuffle toute la collection, et on la numérote
@@ -61,13 +131,37 @@ object enumerator extends Serializable
     combosArr = Random.shuffle(combosArr)
 
     //On numérote le tout
-    var counter = -1L
-    val ret =  combosArr.map( elem => {
-      counter+=1
-      (elem, counter)
-    })
+      var counter = -1L
+      val ret =  combosArr.map( elem => {
+        counter+=1
+        (elem, counter)
+      })
       ret.toArray
   }
+
+  /**
+    * Cette version ne numérote pas les combos
+    * @param n
+    * @param t
+    * @param v
+    * @param seed
+    * @return
+    */
+  def localGenCombos2(n: Int, t: Int, v: Int, seed: Long) = {
+
+    //Step 1 : Cover t parameters
+    val steps = generate_all_steps(n, t)
+    val r2 = steps.par.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
+    var combosArr = r2.flatMap(pv => generate_vc(pv, t, v)).toBuffer //removed cache here. Functions have to cache on their own
+    count = combosArr.size
+
+    //On shuffle toute la collection, et on la numérote
+    Random.setSeed(seed)
+    combosArr = Random.shuffle(combosArr)
+    combosArr.toArray
+  }
+
+
 
   /**
     * Return only a chunk of combos
@@ -600,12 +694,16 @@ object enumerator extends Serializable
     * This is used in the IPOG algorithm to generate the combos, only for the next parameter.
     * What we do is that we generate parameter vectors for (t-1) and then we add this parameter.
     * */
-  def genPartialCombos(n: Int, t: Int, v: Int): Array[Array[Char]] = {
+  def genPartialCombos(n: Int, t: Int, v: Int, seed: Long): Array[Array[Char]] = {
     val steps = generate_all_steps(n, t)
     val r2 = steps.flatMap(step => generate_from_step(step, t)) //Generate all the parameter vectors
     val r3 = r2.map(growby1(_, '1'))
     val r4 = r3.flatMap(pv => generate_vc(pv, t + 1, v)) //Generate the tway combos
-    r4.toArray
+
+    //On shuffle toute la collection, et on la numérote
+    Random.setSeed(seed)
+    val r5 = Random.shuffle(r4)
+    r5.toArray
   }
 
   /**

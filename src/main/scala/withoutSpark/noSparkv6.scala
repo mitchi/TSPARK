@@ -1,17 +1,14 @@
 package withoutSpark
-import central.gen.filename
+
 import cmdlineparser.TSPARK.compressRuns
 import com.acme.BitSet
-import enumerator.enumerator.chunk
+import enumerator.enumerator.{localGenCombos2, verify}
 import ordercoloring.OrderColoring.mergeTests
-import org.apache.spark.SparkContext
-import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 import utils.utils
-import withoutSpark.NoSparkv5.fastVerifyTestSuite
 
 /**
-    Même chose que noSparkv5, mais on attrape des combos qui proviennent de IPOG
+  * Même chose que noSparkv5, mais on attrape des combos qui proviennent de IPOG
   */
 
 object NoSparkv6 extends Serializable {
@@ -53,8 +50,8 @@ object NoSparkv6 extends Serializable {
     //Le id du test, on peut le générer ici sans problème
 
     var i = -1
-    val a = testSuite.map( test => {
-      i+=1
+    val a = testSuite.map(test => {
+      i += 1
       (test, i.toLong)
     })
 
@@ -103,16 +100,17 @@ object NoSparkv6 extends Serializable {
       false
 
   }
+
   /**
     *
     */
 
   /**
     * From a collection of colored combos, we create the tests
+    *
     * @param coloredCombos
     */
-  def transformToTests(colors: Array[Int], someCombos: Array[(Array[Char], Long)]) =
-  {
+  def transformToTests(colors: Array[Int], someCombos: Array[(Array[Char], Long)]) = {
     //Create tests now
     val properForm: Array[(Int, Array[Char])] = someCombos.map(elem => {
       val id = elem._2
@@ -120,33 +118,43 @@ object NoSparkv6 extends Serializable {
       (color, elem._1)
     })
 
+    val hashtable = scala.collection.mutable.HashMap.empty[Int, Array[Char]]
 
-    val hashtable = scala.collection.mutable.HashMap.empty[Int,Array[Char]]
-
-    properForm.foreach( elem => {
+    properForm.foreach(elem => {
       val color = elem._1
       if (hashtable.contains(color)) { //fusion
-        hashtable(color) = mergeTests( hashtable(color), elem._2).get
+        hashtable(color) = mergeTests(hashtable(color), elem._2).get
       }
       else hashtable(color) = elem._2
     })
-    hashtable.toArray.map(  elem => elem._2)
+    hashtable.toArray.map(elem => elem._2)
   }
 
-  def fastcoloring(n: Int, t: Int, v: Int,
-                   chunkSize: Int,
-                   algorithm: String = "OC", seed: Long) = {
 
-    var someCombos: Array[(Array[Char], Long)] = chunk(n,t,v, seed, 0, 1)
-    import enumerator.enumerator.count
-    val colors = new Array[Int](count.toInt)
-    var totalIterations = 0
+
+  /**
+    * Version du Graph Coloring qui fonctionne sans créer de Chunks. Approprié pour utiliser avec IPOG je suppose
+    * @param combos
+    * @param n
+    * @param v
+    * @return
+    */
+  def graphcoloring(combos: Array[Array[Char]], n: Int, v: Int) = {
+
+    val count = combos.size
+    val colors = new Array[Int](count)
 
     //Before everything, we can color the first vertex with the color 1
     var maxColor = 1
     colors(0) = 1
     var i = 1 //the number of vertices we have colored
-    var chunkNo = 0
+
+    //On numérote tous les combos pour le graph coloring
+    var numero = -1
+    var someCombos = combos.map( test => {
+      numero+=1
+      (test, numero.toLong)
+    })
 
     var tableau = initTableau(n, v)
     var etoiles = initTableauEtoiles(n)
@@ -158,108 +166,30 @@ object NoSparkv6 extends Serializable {
     tableau = addToTableau(tableau, firstCombo, n, v)
     etoiles = addTableauEtoiles(etoiles, firstCombo, n, v)
 
-    loop
+    val startTime = System.nanoTime()
+    val afterGrow = System.nanoTime()
+    tableau = addToTableau(tableau, someCombos, n, v)
+    etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
+    val afterAddToTableaux = System.nanoTime()
 
-    def loop(): Unit = {
+    val growTablesTime = (afterGrow - startTime).toDouble / 1000000000
+    val addTableauxTime = (afterAddToTableaux - afterGrow).toDouble / 1000000000
 
-      if (i >= count) return //if we have colored everything, we are good to go
+    println(s"Grow tables : $growTablesTime seconds")
+    println(s"Add tableaux time : $addTableauxTime seconds")
 
-      chunkNo += 1
-      println(s"Now processing Chunk $chunkNo of the graph...")
+    val r1 = generateadjlist_fastcoloringFutures(i, count-1, someCombos, tableau, etoiles)
 
-      //Filter the combos we color in the next OrderColoring iteration
-      println("We are now  creating the chunk we need...")
-      someCombos = chunk(n,t,v, seed, i, chunkSize)
+    println("Using the Order Coloring algorithm to color the graph...")
+    val t1 = System.nanoTime()
+    val a: (Int, Int) = ordercoloringRoaring(colors, r1, i, maxColor)
+    val t2 = System.nanoTime()
+    val time_elapsed = (t2 - t1).toDouble / 1000000000
+    println(s"Time elapsed for Order Coloring: $time_elapsed seconds")
 
-      val sizeOfChunk = someCombos.size
-      println(s"Currently working with a chunk of the graph with $sizeOfChunk vertices.")
+    maxColor = a._2
+    println(s"max color is now $maxColor")
 
-      //Calculate the biggest ID in the chunk
-      val biggestID = i + sizeOfChunk - 1
-
-      println("Adding the entries of the chunk to the tableau...")
-      println("Growing the tables right now...")
-
-      //On pourrait mesurer le temps ici
-
-      val startTime = System.nanoTime()
-      val afterGrow = System.nanoTime()
-      tableau = addToTableau(tableau, someCombos, n, v)
-      etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
-      val afterAddToTableaux = System.nanoTime()
-
-      val growTablesTime = (afterGrow - startTime).toDouble / 1000000000
-      val addTableauxTime = (afterAddToTableaux - afterGrow).toDouble / 1000000000
-
-      println(s"Grow tables : $growTablesTime seconds")
-      println(s"Add tableaux time : $addTableauxTime seconds")
-
-
-      if (debug == true) {
-        println("On print les combos du chunk")
-        for (c <- someCombos) {
-          print(c._2 + " "); utils.print_helper(c._1)
-        }
-      }
-
-      if (debug == true) {
-        println("On imprime le tableau apres remplissage")
-        for (i <- 0 until n) { //pour tous les paramètres
-          for (j <- 0 until v) { //pour toutes les valeurs
-            println(s"p$i=$j " + tableau(i)(j).toString)
-          }
-        }
-
-        println("On imprime le tableau etoiles")
-        var tt = 0
-        for (elem <- etoiles) {
-          println(s"p$tt=*" + " " + elem.toString)
-          tt += 1
-        }
-      }
-
-      val r1 = generateadjlist_fastcoloringFutures(i, sizeOfChunk, someCombos, tableau, etoiles)
-
-      if (debug == true) println("Debug de l'adj list")
-      if (debug == true) r1.foreach(e => println(s"${e._1} ${e._2.toString}"))
-
-      val r2 = if (algorithm == "KP") {
-        println("Using the Knights & Peasants algorithm to color the graph...")
-        //progressiveKP(colors, sc.makeRDD(r1.toArray), r1.size, maxColor, sc)
-        (1, 1)
-      }
-      else {
-        println("Using the Order Coloring algorithm to color the graph...")
-        val t1 = System.nanoTime()
-        val a = ordercoloringRoaring(colors, r1, i, maxColor)
-        val t2 = System.nanoTime()
-        val time_elapsed = (t2 - t1).toDouble / 1000000000
-        println(s"Time elapsed for Order Coloring: $time_elapsed seconds")
-        a
-      }
-
-      if (debug == true) {
-        println("On imprime le tableau des couleurs après coloriage du chunk par OrderColoring")
-        for (i <- 0 until colors.size) {
-          val v = colors(i)
-          println(s"vertex $i has color $v")
-        }
-      }
-
-      //Update the max color
-      totalIterations += r2._1
-      maxColor = r2._2
-      println(s"max color is now $maxColor")
-      i += sizeOfChunk //1 + 10000 = 10001
-      println(s"i is now $i")
-
-      loop
-    }
-
-    val percent = ((totalIterations.toDouble / count.toDouble) * 100)
-    val vertexPerIteration = count / totalIterations
-    println(s"We did a total of $totalIterations iterations, which is $percent% of total")
-    println(s"We also colored $vertexPerIteration vertices per iteration on average")
 
     val tests = transformToTests(colors, someCombos)
 
@@ -547,7 +477,6 @@ object NoSparkv6 extends Serializable {
   }
 
 
-
   /**
     * MUTABLE.
     * This function works with a lookup table of colors ( color not here = 0, here = 1)
@@ -578,167 +507,12 @@ object NoSparkv6 extends Serializable {
     res
   }
 
-  /**
-    * We will modify the colors array.
-    * This function returns when the K&P algorithm has colored all new vertices.
-    *
-    * The adjmatrix can be a RDD or an Array.
-    * Ideally, we are using an adjmatrix that spans the whole cluster. This is a more effective way to use
-    * all the RAM of the cluster.
-    *
-    * We can remove vertices when they are colored.
-    *
-    * @return
-    */
-  def progressiveKP(colors: Array[Int], adjMatrix: RDD[(Long, BitSet)], remaining: Int,
-                    maxColor: Int, sc: SparkContext) = {
-
-
-    var iterationCounter = 1
-    var currentMaxColor = maxColor
-    var remainingToBeColored = remaining
-    var rdd = adjMatrix
-
-    loop
-
-    def loop(): Unit = {
-      while (true) {
-
-        //The main exit condition. We have colored everything.
-        if (remainingToBeColored <= 0) return
-
-        // println(s"Iteration $iterationCounter ")
-        //Broadcast the list of colors we need from the driver program
-        val colors_bcast = sc.broadcast(colors)
-
-        //From an adjmatrix RDD, produce a RDD of colors
-        //We can either become a color, or stay the same.
-        var colorsRDD = rdd.flatMap(elem => {
-
-          val thisId = elem._1.toInt
-          val adjlist = elem._2
-          val colors = colors_bcast.value
-          var betterPeasant = false
-          var c = 0 //the color we find for this guy
-
-          val neighborcolors = new Array[Int](currentMaxColor + 2)
-
-          //First, check if the node is a peasant. If it is, we can continue working
-          //Otherwise, if the node is a knight (the node has a color), we stop working right away.
-          if (colors(thisId) == 0) { //this node is a peasant
-
-            //First answer the following question : Can we become a knight in this iteration?
-            //For this, we have to have the best tiebreaker. To check for this, we look at our adjlist.
-            //If we find an earlier peasant that we are connected to, then we have to wait. If it's a knight and not a peasant, we are fine.
-            //To check for peasants, we go through our adjlist from a certain i to a certain j
-
-            //Batch iteration through the neighbors of this guy
-            //Ok, on itere sur tous les bits. Il faut arrêter avant
-            loop3;
-            def loop3(): Unit = {
-              while (true) {
-                for (elem <- adjlist.iterator) {
-                  if (elem >= thisId) return
-                  val neighbor = elem
-                  val neighborColor = colors(neighbor)
-                  neighborcolors(neighborColor) = 1
-                  if (neighborColor == 0) {
-                    betterPeasant = true
-                    return
-                  }
-                }
-              }
-            }
-
-            //We can become a knight here
-            if (betterPeasant == false) {
-              c = color(neighborcolors)
-            }
-          } //fin du if this node is a peasant
-
-          //Return the id and the color. If no color was found return None?
-          if (c != 0) {
-            Some(thisId, c)
-          }
-          else None
-        }) //fin du map
-
-        //Unpersist the colors broadcast data structrure
-        colors_bcast.unpersist(false)
-
-        //Every vertex we have colored, we mark it in the colors data structure.
-        //We also filter out the vertices that don't improve to a knight
-        //val results = colorsRDD.collect().map(e => e.get)
-        val results = colorsRDD.collect()
-
-        //Update the colors structure, and update the maximum color at the same time
-        results.foreach(elem => {
-          colors(elem._1) = elem._2
-          remainingToBeColored -= 1
-          if (elem._2 > currentMaxColor) currentMaxColor = elem._2
-        })
-
-        iterationCounter += 1
-
-      } //while true loop here
-    } //def loop here
-
-    iterationCounter -= 1
-    //println(s"colored the chunk in $iterationCounter iterations")
-
-    //Return the iteration counter and the maxCounter
-    (iterationCounter, currentMaxColor)
-  }
-
-  /**
-    * The distributed graph coloring algorithm with the fast coloring construction algorithm
-    *
-    * @param n
-    * @param t
-    * @param v
-    * @param sc
-    * @return
-    */
-  def start(n: Int, t: Int, v: Int,
-            chunkSize: Int = 4000, algorithm: String = "OC", seed: Long) = {
-    val expected = utils.numberTWAYCombos(n, t, v)
-    import cmdlineparser.TSPARK.compressRuns
-
-    println("Distributed Graph Coloring with FastColoring algorithm, BitSets for graph construction")
-    println(s"Run compression for Roaring Bitmap = $compressRuns")
-    println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
-    println(s"Problem : n=$n,t=$t,v=$v")
-    println(s"Expected number of combinations is : $expected ")
-    println(s"Formula is C($n,$t) * $v^$t")
-
-    import java.io._
-    val pw = new PrintWriter(new FileOutputStream(filename, true))
-
-
-    val t1 = System.nanoTime()
-
-    val result = fastcoloring(n,t,v, chunkSize, algorithm, seed)
-
-    val t2 = System.nanoTime()
-    val time_elapsed = (t2 - t1).toDouble / 1000000000
-
-    val maxColor = result._2
-
-    pw.append(s"$t;$n;$v;NO_SPARK_ROARING;algorithm=$algorithm;$time_elapsed;$maxColor\n")
-    println(s"$t;$n;$v;NO_SPARK_ROARING;algorithm=$algorithm;$time_elapsed;$maxColor\n")
-    pw.flush()
-
-    //Return the test suite
-    result._1
-  }
 }
 
 object testNoSparkv6 extends App {
 
   var debug = false
-
-  import NoSparkv6.start
-  import enumerator.enumerator.localGenCombos
+  import withoutSpark.NoSparkv6.graphcoloring
 
   var n = 8
   var t = 7
@@ -746,20 +520,21 @@ object testNoSparkv6 extends App {
 
   val seed = if (debug == true) 20
   else System.nanoTime()
-
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = true
-  val tests = start(n, t, v, 200000, "OC", seed) //4000 pour 100 2 2
 
-  println("We have " + tests.size + " tests")
+  val combos = localGenCombos2(n,t,v, seed)
+  val coloringResult: (Array[Array[Char]], Int) = graphcoloring(combos, n, v)
+  val tests = coloringResult._1
+  val maxColor = coloringResult._2
+
+  println("We have colored the graph using " + maxColor + " colors")
   println("Printing the tests....")
-  //tests foreach (utils.print_helper(_))
+  tests foreach (utils.print_helper(_))
 
   println("\n\nVerifying test suite ... ")
 
-  val combos: Array[(Array[Char], Long)] = localGenCombos(n,t,v,seed)
-  val answer = fastVerifyTestSuite(tests, n, v, combos)
+  val answer = verify(tests, n, v, combos)
   if (answer == true) println("Test suite is verified")
   else println("Test suite is not verified")
-
 }
