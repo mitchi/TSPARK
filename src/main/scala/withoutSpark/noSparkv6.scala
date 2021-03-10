@@ -139,10 +139,11 @@ object NoSparkv6 extends Serializable {
     * @param v
     * @return
     */
-  def graphcoloring(combos: Array[Array[Char]], n: Int, v: Int) = {
+  def graphcoloring(combos: Array[Array[Char]], v: Int) = {
 
     val count = combos.size
     val colors = new Array[Int](count)
+    val n = combos(0).size
 
     //Before everything, we can color the first vertex with the color 1
     var maxColor = 1
@@ -523,8 +524,7 @@ object testNoSparkv6 extends App {
   import cmdlineparser.TSPARK.compressRuns
   compressRuns = true
 
-  val combos = localGenCombos2(n,t,v, seed)
-  val coloringResult: (Array[Array[Char]], Int) = graphcoloring(combos, n, v)
+  val coloringResult: (Array[Array[Char]], Int) = graphcoloring(localGenCombos2(n,t,v, seed), v)
   val tests = coloringResult._1
   val maxColor = coloringResult._2
 
@@ -534,7 +534,7 @@ object testNoSparkv6 extends App {
 
   println("\n\nVerifying test suite ... ")
 
-  val answer = verify(tests, n, v, combos)
+  val answer = verify(tests, n, v, localGenCombos2(n,t,v, seed))
   if (answer == true) println("Test suite is verified")
   else println("Test suite is not verified")
 }

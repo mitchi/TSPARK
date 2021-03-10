@@ -143,6 +143,13 @@ class BitSet(numBits: Int) extends Serializable {
     }
   }
 
+  /** Same behavior as the xor1 function. Maybe its faster? */
+  def notEverything(): Unit = {
+    for (i <- 0 until words.length) {
+      words(i) = ~words(i)
+    }
+  }
+
   /**
     * Set all the bits up to a given index
     */
