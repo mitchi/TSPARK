@@ -7,20 +7,18 @@ import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, initTableau, ini
 import scala.collection.mutable.ArrayBuffer
 
 /**
-  ** Cette version marche sans Apache Spark. Elle utilise également un graph coloring local
-  *  Fonctionne plutot bien
+  ** Cette version est comme local_dipog, sauf qu'on utilise le BitSet, et on essaie de faire moins d'allocations mémoire.
+  *  Afin d'alléger le travail du GC
   */
 
-object local_dipog extends Serializable {
+object local_dipog2_bitset extends Serializable {
   //Nom standard pour les résultats
   val filename = "results.txt"
   var debug = false
 
   import cmdlineparser.TSPARK.save //Variable globale save, qui existe dans l'autre source file
 
-  var totalTimeClone = 0.0
-  var totalTimeFlip =  0.0
-  var totalTimeFlip2 = 0.0
+
   /**
     * Ici, on a la garantie que list est non-vide.
     *
@@ -32,19 +30,10 @@ object local_dipog extends Serializable {
   def generateOtherDelete(list: RoaringBitmap,
                           etoiles: RoaringBitmap, numberTests: Long) = {
 
-    val t1 = System.nanoTime()
     val possiblyValidGuys = list.clone()
-    val t2 = System.nanoTime()
-    totalTimeClone += (t2 - t1).toDouble / 1000000000
-
     possiblyValidGuys.or(etoiles)
-
-    val t3 = System.nanoTime()
     possiblyValidGuys.flip(0.toLong
       , numberTests)
-    val t4 = System.nanoTime()
-    totalTimeFlip += (t4 - t3).toDouble / 1000000000
-
     possiblyValidGuys
   }
 
@@ -55,33 +44,25 @@ object local_dipog extends Serializable {
     * @param combos
     * @return true if the test suite validates
     */
-  def fastDeleteCombo(nouveauxTests: Array[Array[Char]], v: Int,
+  def fastDeleteCombo(testsToDelete: Array[Array[Char]], v: Int,
                       combos: Array[Array[Char]]): Array[Array[Char]] = {
 
-    var t1 = System.nanoTime()
-    var totalTimeCombos = 0.0
-    var totalTimeGenerateOtherDelete = 0.0
+    if (testsToDelete.isEmpty) return combos
+    val n = testsToDelete(0).size
 
-    if (nouveauxTests.isEmpty) return combos
-    val n = nouveauxTests(0).size
-
-    val numberOfTests = nouveauxTests.size
+    val numberOfTests = testsToDelete.size
     val tableau: Array[Array[RoaringBitmap]] = initTableau(n, v)
     val etoiles: Array[RoaringBitmap] = initTableauEtoiles(n)
 
     //Le id du test, on peut le générer ici sans problème
     var i = -1
-    val a: Array[(Array[Char], Long)] = nouveauxTests.map(test => {
+    val a: Array[(Array[Char], Long)] = testsToDelete.map(test => {
       i += 1
       (test, i.toLong)
     })
 
     addTableauEtoiles(etoiles, a, n, v)
     addToTableau(tableau, a, n, v)
-
-    var t2 = System.nanoTime()
-    val timeElapsed = (t2 - t1).toDouble / 1000000000
-    println(s"Temps pour init + add : $timeElapsed seconds" )
 
     //Pour tous les combos du RDD
     val r1 = combos.flatMap(combo => {
@@ -92,23 +73,15 @@ object local_dipog extends Serializable {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
           val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-
-          val t3 = System.nanoTime()
           val invalids = generateOtherDelete(list, listEtoiles, numberOfTests)
-          val t4 = System.nanoTime()
-          totalTimeGenerateOtherDelete += (t4 - t3).toDouble / 1000000000
-
           certifiedInvalidGuys or invalids
         }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
       }
 
-      val t9 = System.nanoTime()
       certifiedInvalidGuys.flip(0.toLong
         , numberOfTests)
-      val t10 = System.nanoTime()
-      totalTimeFlip2 += (t10 - t9).toDouble / 1000000000
 
       val it = certifiedInvalidGuys.getBatchIterator
       if (it.hasNext == true) {
@@ -118,12 +91,6 @@ object local_dipog extends Serializable {
       }
     })
     //On retourne le RDD (maintenant filtré))
-
-    println(s"Temps total du body : $totalTimeCombos seconds" )
-    println(s"Temps total du totalTimeGenerateOtherDelete : $totalTimeGenerateOtherDelete seconds" )
-    println(s"Temps total du totalTimeClone : $totalTimeClone seconds" )
-    println(s"Temps total du totalTimeFlip : $totalTimeFlip seconds" )
-    println(s"Temps total du totalTimeFlip2 : $totalTimeFlip2 seconds" )
     r1
   }
 
@@ -291,8 +258,6 @@ object local_dipog extends Serializable {
     var totalTime_delete = 0.0
     var totalTime_aggregate = 0.0
 
-    var numberCalls = 0
-
     loop2 //go into the main loop
     def loop2(): Unit = {
 
@@ -320,6 +285,7 @@ object local_dipog extends Serializable {
 
       val hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
 
+
       newCombos.foreach(combo => {
         //val someTests = someTests_bcast.value
         var list = new ArrayBuffer[key_v]()
@@ -327,7 +293,6 @@ object local_dipog extends Serializable {
 
         val t3 = System.nanoTime()
         val valids: Option[RoaringBitmap] = findValid(combo, tableau, etoiles, nTests)
-        numberCalls +=1
         val t4 = System.nanoTime()
         totalTime_findValid += (t4 - t3).toDouble / 1000000000
 
@@ -384,19 +349,10 @@ object local_dipog extends Serializable {
 
       //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500).localCheckpoint()
       val t5 = System.nanoTime()
-      val teststests = newTests.toArray
-      val combien = teststests.size
-      val nbCombos = newCombos.size
 
-      //Reset global counters
-      totalTimeClone = 0.0
-      totalTimeFlip = 0.0
-      totalTimeFlip2 = 0.0
-      newCombos = fastDeleteCombo(teststests, v, newCombos)
+      newCombos = fastDeleteCombo(newTests.toArray, v, newCombos)
       val t6 = System.nanoTime()
-      val timeElapsed = (t6 - t5).toDouble / 1000000000
-      println(s"On efface $nbCombos combos avec nos $combien tests: $timeElapsed seconds")
-      totalTime_delete += timeElapsed
+      totalTime_delete += (t6 - t5).toDouble / 1000000000
 
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {
@@ -428,8 +384,8 @@ object local_dipog extends Serializable {
     println(s"Total time spent on genTables: $totalTime_genTables seconds")
     println("Total time spent on findValid: " + totalTime_findValid + " seconds")
     println(s"Total time spent on delete: $totalTime_delete seconds")
+
     println(s"Total time spent on aggregate: $totalTime_aggregate seconds")
-    println(s"Number of findValid calls: $numberCalls")
 
     //Now we return the results, and also the uncovered combos.
     (finalTests.toArray, newCombos)
@@ -535,14 +491,14 @@ object local_dipog extends Serializable {
 /**
   * Petit objet pour tester cet algorithme, rien de trop compliqué
   */
-object test_localdipog extends App {
+object test_localdipog2 extends App {
 
-  var n = 100
+  var n = 800
   var t = 2
-  var v = 24
+  var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.local_dipog.start
+  import dipog.local_dipog2_bitset.start
   import enumerator.enumerator.localGenCombos2
 
   compressRuns = true
