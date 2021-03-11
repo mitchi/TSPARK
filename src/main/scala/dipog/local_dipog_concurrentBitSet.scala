@@ -438,8 +438,8 @@ object local_dipog_concurrentBitSet extends Serializable {
       var t2 = System.nanoTime()
       var time_elapsed = (t2 - t1).toDouble / 1000000000
 
-      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENTBITSET;seed=$seed;$time_elapsed;${tests.size}\n")
-      println(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENTBITSET;seed=$seed;$time_elapsed;${tests.size}\n")
+      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENTBITSET;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
+      println(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENTBITSET;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
       pw.flush()
 
       //If the option to save to a text file is activated
@@ -465,9 +465,9 @@ object local_dipog_concurrentBitSet extends Serializable {
   */
 object test_localdipog_concurrentbitset extends App {
 
-  var n = 8
-  var t = 7
-  var v = 4
+  var n = 100
+  var t = 2
+  var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
   import dipog.local_dipog_concurrentBitSet.start
@@ -475,7 +475,7 @@ object test_localdipog_concurrentbitset extends App {
 
   compressRuns = true
   var seed = System.nanoTime()
-  val tests = start(n, t, v, 100, 100000, "OC", seed)
+  val tests = start(n, t, v, 50, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
