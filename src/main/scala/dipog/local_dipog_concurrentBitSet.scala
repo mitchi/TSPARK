@@ -4,9 +4,7 @@ import enumerator.enumerator.{genPartialCombos, growby1, localGenCombos2, verify
 import org.roaringbitmap.RoaringBitmap
 import utils.utils._
 import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, initTableau, initTableauEtoiles}
-
 import scala.collection.mutable.ArrayBuffer
-
 import scala.jdk.CollectionConverters._
 
 /**
@@ -14,7 +12,7 @@ import scala.jdk.CollectionConverters._
   *  Fonctionne plutot bien
   */
 
-object local_dipog_concurrenthash extends Serializable {
+object local_dipog_concurrentBitSet extends Serializable {
   //Nom standard pour les résultats
   val filename = "results.txt"
   var debug = false
@@ -35,19 +33,10 @@ object local_dipog_concurrenthash extends Serializable {
   def generateOtherDelete(list: RoaringBitmap,
                           etoiles: RoaringBitmap, numberTests: Long) = {
 
-    val t1 = System.nanoTime()
     val possiblyValidGuys = list.clone()
-    val t2 = System.nanoTime()
-    totalTimeClone += (t2 - t1).toDouble / 1000000000
-
     possiblyValidGuys.or(etoiles)
-
-    val t3 = System.nanoTime()
     possiblyValidGuys.flip(0.toLong
       , numberTests)
-    val t4 = System.nanoTime()
-    totalTimeFlip += (t4 - t3).toDouble / 1000000000
-
     possiblyValidGuys
   }
 
@@ -60,10 +49,6 @@ object local_dipog_concurrenthash extends Serializable {
     */
   def fastDeleteCombo(nouveauxTests: Array[Array[Char]], v: Int,
                       combos: Array[Array[Char]]): Array[Array[Char]] = {
-
-    var t1 = System.nanoTime()
-    var totalTimeCombos = 0.0
-    var totalTimeGenerateOtherDelete = 0.0
 
     if (nouveauxTests.isEmpty) return combos
     val n = nouveauxTests(0).size
@@ -82,10 +67,6 @@ object local_dipog_concurrenthash extends Serializable {
     addTableauEtoiles(etoiles, a, n, v)
     addToTableau(tableau, a, n, v)
 
-    var t2 = System.nanoTime()
-    val timeElapsed = (t2 - t1).toDouble / 1000000000
-    println(s"Temps pour init + add : $timeElapsed seconds" )
-
     //Pour tous les combos du RDD
     val r1 = combos.par.flatMap(combo => {
       var i = 0 //quel paramètre?
@@ -95,23 +76,15 @@ object local_dipog_concurrenthash extends Serializable {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
           val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-
-          val t3 = System.nanoTime()
           val invalids = generateOtherDelete(list, listEtoiles, numberOfTests)
-          val t4 = System.nanoTime()
-          totalTimeGenerateOtherDelete += (t4 - t3).toDouble / 1000000000
-
           certifiedInvalidGuys or invalids
         }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
       }
 
-      val t9 = System.nanoTime()
       certifiedInvalidGuys.flip(0.toLong
         , numberOfTests)
-      val t10 = System.nanoTime()
-      totalTimeFlip2 += (t10 - t9).toDouble / 1000000000
 
       val it = certifiedInvalidGuys.getBatchIterator
       if (it.hasNext == true) {
@@ -121,12 +94,6 @@ object local_dipog_concurrenthash extends Serializable {
       }
     })
     //On retourne le RDD (maintenant filtré))
-
-    println(s"Temps total du body : $totalTimeCombos seconds" )
-    println(s"Temps total du totalTimeGenerateOtherDelete : $totalTimeGenerateOtherDelete seconds" )
-    println(s"Temps total du totalTimeClone : $totalTimeClone seconds" )
-    println(s"Temps total du totalTimeFlip : $totalTimeFlip seconds" )
-    println(s"Temps total du totalTimeFlip2 : $totalTimeFlip2 seconds" )
     r1.toArray
   }
 
@@ -265,7 +232,7 @@ object local_dipog_concurrenthash extends Serializable {
     * @return
     */
   def horizontalgrowth(tests: Array[Array[Char]], combos: Array[Array[Char]],
-                       v: Int, t: Int, hstep: Int = -1):
+                       v: Int, t: Int, hstep: Int = 100):
   (Array[Array[Char]], Array[Array[Char]]) = {
 
     var finalTests = new ArrayBuffer[Array[Char]]()
@@ -281,20 +248,10 @@ object local_dipog_concurrenthash extends Serializable {
     var newCombos = combos
 
     //Start M at 1% of total test size
-    var m = tests.size / 100
+    var m = tests.size / hstep
     if (m < 1) m = 1
     var i = 0 //for each test
     val n = tests(0).size
-
-    //Set the M value from the static value if there was one provided.
-    if (hstep != -1) m = hstep
-
-    var totalTime_findValid = 0.0
-    var totalTime_genTables = 0.0
-    var totalTime_delete = 0.0
-    var totalTime_aggregate = 0.0
-
-    var numberCalls = 0
 
     loop2 //go into the main loop
     def loop2(): Unit = {
@@ -312,12 +269,7 @@ object local_dipog_concurrenthash extends Serializable {
 
       // val someTests_bcast: Broadcast[ArrayBuffer[Array[Char]]] = sc.broadcast(someTests)
       val nTests = someTests.size
-
-      val t3 = System.nanoTime()
       val tables = genTables(someTests.toArray, n, v)
-      val t4 = System.nanoTime()
-      totalTime_genTables += (t4 - t3).toDouble / 1000000000
-
       val tableau = tables._1
       val etoiles = tables._2
 
@@ -331,10 +283,7 @@ object local_dipog_concurrenthash extends Serializable {
 
         val t3 = System.nanoTime()
         val valids: Option[RoaringBitmap] = findValid(combo, tableau, etoiles, nTests)
-        numberCalls +=1
         val t4 = System.nanoTime()
-        totalTime_findValid += (t4 - t3).toDouble / 1000000000
-
         if (valids.isDefined) {
           //Batch iterator ici
           val it = valids.get.getBatchIterator
@@ -358,8 +307,6 @@ object local_dipog_concurrenthash extends Serializable {
 
       //Find the best version of the tests using the cluster TODO: On peut surement enlever cette étape et remplacer par du code local
 
-      val t7 = System.nanoTime()
-
       val map2: Map[Int, Iterable[(key_v, Int)]] = hashmappp.groupBy(_._1.test)
       val res2 = map2.map(elem => {
         var bestVersion = '''
@@ -373,10 +320,6 @@ object local_dipog_concurrenthash extends Serializable {
         (elem._1, bestVersion)
       }).toArray
 
-      val t8 = System.nanoTime()
-      totalTime_aggregate += (t8 - t7).toDouble / 1000000000
-
-
       //Add all of these as new tests
       for (i <- 0 until res2.size) {
         val id = res2(i)._1
@@ -387,20 +330,9 @@ object local_dipog_concurrenthash extends Serializable {
       }
 
       //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500).localCheckpoint()
-      val t5 = System.nanoTime()
       val teststests = newTests.toArray
-      val combien = teststests.size
-      val nbCombos = newCombos.size
-
       //Reset global counters
-      totalTimeClone = 0.0
-      totalTimeFlip = 0.0
-      totalTimeFlip2 = 0.0
       newCombos = fastDeleteCombo(teststests, v, newCombos)
-      val t6 = System.nanoTime()
-      val timeElapsed = (t6 - t5).toDouble / 1000000000
-      println(s"On efface $nbCombos combos avec nos $combien tests: $timeElapsed seconds")
-      totalTime_delete += timeElapsed
 
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {
@@ -429,12 +361,6 @@ object local_dipog_concurrenthash extends Serializable {
       loop2
     }
 
-    println(s"Total time spent on genTables: $totalTime_genTables seconds")
-    println("Total time spent on findValid: " + totalTime_findValid + " seconds")
-    println(s"Total time spent on delete: $totalTime_delete seconds")
-    println(s"Total time spent on aggregate: $totalTime_aggregate seconds")
-    println(s"Number of findValid calls: $numberCalls")
-
     //Now we return the results, and also the uncovered combos.
     (finalTests.toArray, newCombos)
   } //fin fonction horizontal growth 1 percent old
@@ -449,11 +375,11 @@ object local_dipog_concurrenthash extends Serializable {
     * @param sc
     * @return
     */
-  def start(n: Int, t: Int, v: Int, hstep: Int = -1,
+  def start(n: Int, t: Int, v: Int, hstep: Int = 100,
             chunksize: Int = 40000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
 
     val expected = numberTWAYCombos(n, t, v)
-    println("Local IPOG Coloring CONCURRENT HASH")
+    println("Local IPOG Coloring CONCURRENT BITSET")
     println(s"Horizontal growth is performed in $hstep iterations")
     println(s"Chunk size: $chunksize vertices")
     println(s"Algorithm for graph coloring is: $algorithm")
@@ -486,12 +412,10 @@ object local_dipog_concurrenthash extends Serializable {
       println(s" ${newCombos.size} combos to cover")
       println(s" And we currently have ${tests.size} tests")
 
-
       val t4 = System.nanoTime()
       val r1 = horizontalgrowth(tests, newCombos, v, t, hstep)
       val t5 = System.nanoTime()
       println(s"Horizontal growth is done in  " + (t5 - t4).toDouble / 1000000000 + " seconds")
-
 
       newCombos = r1._2 //Retrieve the combos that are not covered
       tests = r1._1 //Replace the tests
@@ -514,8 +438,8 @@ object local_dipog_concurrenthash extends Serializable {
       var t2 = System.nanoTime()
       var time_elapsed = (t2 - t1).toDouble / 1000000000
 
-      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_FAST_ROARING;$time_elapsed;${tests.size}\n")
-      println(s"$t;${i + t};$v;DIPOG_COLORING_FAST_ROARING;$time_elapsed;${tests.size}\n")
+      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENTBITSET;seed=$seed;$time_elapsed;${tests.size}\n")
+      println(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENTBITSET;seed=$seed;$time_elapsed;${tests.size}\n")
       pw.flush()
 
       //If the option to save to a text file is activated
@@ -539,19 +463,19 @@ object local_dipog_concurrenthash extends Serializable {
 /**
   * Petit objet pour tester cet algorithme, rien de trop compliqué
   */
-object test_localdipog_concurrenthash extends App {
+object test_localdipog_concurrentbitset extends App {
 
   var n = 8
   var t = 7
   var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.local_dipog_concurrenthash.start
+  import dipog.local_dipog_concurrentBitSet.start
   import enumerator.enumerator.localGenCombos2
 
   compressRuns = true
   var seed = System.nanoTime()
-  val tests = start(n, t, v, -1, 100000, "OC", seed)
+  val tests = start(n, t, v, 100, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
