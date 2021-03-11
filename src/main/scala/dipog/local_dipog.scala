@@ -262,7 +262,7 @@ object local_dipog extends Serializable {
     * @return
     */
   def horizontalgrowth(tests: Array[Array[Char]], combos: Array[Array[Char]],
-                       v: Int, t: Int, hstep: Int = -1):
+                       v: Int, t: Int, hstep: Int = 100):
   (Array[Array[Char]], Array[Array[Char]]) = {
 
     var finalTests = new ArrayBuffer[Array[Char]]()
@@ -278,13 +278,10 @@ object local_dipog extends Serializable {
     var newCombos = combos
 
     //Start M at 1% of total test size
-    var m = tests.size / 100
+    var m = tests.size / hstep
     if (m < 1) m = 1
     var i = 0 //for each test
     val n = tests(0).size
-
-    //Set the M value from the static value if there was one provided.
-    if (hstep != -1) m = hstep
 
     var totalTime_findValid = 0.0
     var totalTime_genTables = 0.0
@@ -445,7 +442,7 @@ object local_dipog extends Serializable {
     * @param sc
     * @return
     */
-  def start(n: Int, t: Int, v: Int, hstep: Int = -1,
+  def start(n: Int, t: Int, v: Int, hstep: Int = 100,
             chunksize: Int = 40000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
 
     val expected = numberTWAYCombos(n, t, v)
@@ -510,8 +507,10 @@ object local_dipog extends Serializable {
       var t2 = System.nanoTime()
       var time_elapsed = (t2 - t1).toDouble / 1000000000
 
-      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_FAST_ROARING;$time_elapsed;${tests.size}\n")
-      println(s"$t;${i + t};$v;DIPOG_COLORING_FAST_ROARING;$time_elapsed;${tests.size}\n")
+      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_FAST_ROARING;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
+      println(s"$t;${i + t};$v;DIPOG_COLORING_FAST_ROARING;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
+
+
       pw.flush()
 
       //If the option to save to a text file is activated
@@ -537,8 +536,8 @@ object local_dipog extends Serializable {
   */
 object test_localdipog extends App {
 
-  var n = 9
-  var t = 7
+  var n = 8
+  var t = 4
   var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
@@ -547,7 +546,8 @@ object test_localdipog extends App {
 
   compressRuns = true
   var seed = System.nanoTime()
-  val tests = start(n, t, v, -1, 100000, "OC", seed)
+  seed = 247369792288100L
+  val tests = start(n, t, v, 100, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")

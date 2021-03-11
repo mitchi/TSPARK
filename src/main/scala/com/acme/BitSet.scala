@@ -71,7 +71,7 @@ class BitSet(numBits: Int) extends Serializable {
       var output = ""
       val it = this.iterator
       for (i <- it) {
-        output += i
+        output += i +" "
       }
       output
   }
@@ -371,6 +371,16 @@ class BitSet(numBits: Int) extends Serializable {
     }
 
     -1
+  }
+
+  /**
+    * Ma petite implémentation de la méthode clone
+    * @return
+    */
+  override def clone(): BitSet = {
+    val bb = new BitSet(numBits)
+    Array.copy(this.words, 0, bb.words, 0, bb.words.length)
+    bb
   }
 
   /** Return the number of longs it would take to hold numBits. */

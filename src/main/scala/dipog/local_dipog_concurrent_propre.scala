@@ -12,7 +12,7 @@ import scala.jdk.CollectionConverters._
   *  Fonctionne plutot bien
   */
 
-object local_dipog_concurrentBitSet extends Serializable {
+object local_dipog_concurrent_propre extends Serializable {
   //Nom standard pour les résultats
   val filename = "results.txt"
   var debug = false
@@ -171,6 +171,9 @@ object local_dipog_concurrentBitSet extends Serializable {
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
         val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
         val invalids = generateOtherList(list, listEtoiles, nTests)
+
+        invalids.getCardinality
+
         certifiedInvalidGuys or invalids
       } //fin du if pour le skip étoile
       i += 1
@@ -379,7 +382,7 @@ object local_dipog_concurrentBitSet extends Serializable {
             chunksize: Int = 40000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
 
     val expected = numberTWAYCombos(n, t, v)
-    println("Local IPOG Coloring CONCURRENT BITSET")
+    println("Local IPOG Coloring CONCURRENT PROPRE")
     println(s"Horizontal growth is performed in $hstep iterations")
     println(s"Chunk size: $chunksize vertices")
     println(s"Algorithm for graph coloring is: $algorithm")
@@ -438,8 +441,8 @@ object local_dipog_concurrentBitSet extends Serializable {
       var t2 = System.nanoTime()
       var time_elapsed = (t2 - t1).toDouble / 1000000000
 
-      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENTBITSET;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
-      println(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENTBITSET;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
+      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENT_PROPRE;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
+      println(s"$t;${i + t};$v;DIPOG_COLORING_CONCURRENT_PROPRE;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
       pw.flush()
 
       //If the option to save to a text file is activated
@@ -465,16 +468,17 @@ object local_dipog_concurrentBitSet extends Serializable {
   */
 object test_localdipog_concurrentbitset extends App {
 
-  var n = 100
-  var t = 2
-  var v = 2
+  var n = 8
+  var t = 7
+  var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.local_dipog_concurrentBitSet.start
+  import dipog.local_dipog_concurrent_propre.start
   import enumerator.enumerator.localGenCombos2
 
   compressRuns = true
   var seed = System.nanoTime()
+  seed = 246491073846900L
   val tests = start(n, t, v, 50, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
