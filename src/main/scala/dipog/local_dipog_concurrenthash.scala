@@ -4,14 +4,17 @@ import enumerator.enumerator.{genPartialCombos, growby1, localGenCombos2, verify
 import org.roaringbitmap.RoaringBitmap
 import utils.utils._
 import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, initTableau, initTableauEtoiles}
+
 import scala.collection.mutable.ArrayBuffer
+
+import scala.jdk.CollectionConverters._
 
 /**
   ** Cette version marche sans Apache Spark. Elle utilise également un graph coloring local
   *  Fonctionne plutot bien
   */
 
-object local_dipog extends Serializable {
+object local_dipog_concurrenthash extends Serializable {
   //Nom standard pour les résultats
   val filename = "results.txt"
   var debug = false
@@ -84,7 +87,7 @@ object local_dipog extends Serializable {
     println(s"Temps pour init + add : $timeElapsed seconds" )
 
     //Pour tous les combos du RDD
-    val r1 = combos.flatMap(combo => {
+    val r1 = combos.par.flatMap(combo => {
       var i = 0 //quel paramètre?
       var certifiedInvalidGuys = new RoaringBitmap()
       for (it <- combo) { //pour tous les paramètres de ce combo
@@ -124,7 +127,7 @@ object local_dipog extends Serializable {
     println(s"Temps total du totalTimeClone : $totalTimeClone seconds" )
     println(s"Temps total du totalTimeFlip : $totalTimeFlip seconds" )
     println(s"Temps total du totalTimeFlip2 : $totalTimeFlip2 seconds" )
-    r1
+    r1.toArray
   }
 
   /**
@@ -318,9 +321,10 @@ object local_dipog extends Serializable {
       val tableau = tables._1
       val etoiles = tables._2
 
-      val hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
+      //val hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
+      val hashmappp = new java.util.concurrent.ConcurrentHashMap[key_v, Int]().asScala
 
-      newCombos.foreach(combo => {
+      newCombos.par.foreach(combo => {
         //val someTests = someTests_bcast.value
         var list = new ArrayBuffer[key_v]()
         val c = combo(0) //Get the version of the combo
@@ -449,7 +453,7 @@ object local_dipog extends Serializable {
             chunksize: Int = 40000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
 
     val expected = numberTWAYCombos(n, t, v)
-    println("Local IPOG Coloring with M tests")
+    println("Local IPOG Coloring CONCURRENT HASH")
     println(s"Horizontal growth is performed in $hstep iterations")
     println(s"Chunk size: $chunksize vertices")
     println(s"Algorithm for graph coloring is: $algorithm")
@@ -535,14 +539,14 @@ object local_dipog extends Serializable {
 /**
   * Petit objet pour tester cet algorithme, rien de trop compliqué
   */
-object test_localdipog extends App {
+object test_localdipog_concurrenthash extends App {
 
-  var n = 9
-  var t = 7
-  var v = 4
+  var n = 100
+  var t = 2
+  var v = 24
 
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.local_dipog.start
+  import dipog.local_dipog_concurrenthash.start
   import enumerator.enumerator.localGenCombos2
 
   compressRuns = true
