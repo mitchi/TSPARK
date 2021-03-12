@@ -50,7 +50,6 @@ object enumerator extends Serializable
 
     val nTests = testSuite.size
     val tableau = initTableau(n, v)
-    val etoiles = initTableauEtoiles(n)
     //Le id du test, on peut le générer ici sans problème
 
     var i = -1
@@ -59,7 +58,6 @@ object enumerator extends Serializable
       (test, i.toLong)
     })
 
-    addTableauEtoiles(etoiles, a, n, v)
     addToTableau(tableau, a, n, v)
 
     //Pour tous les combos
@@ -71,8 +69,7 @@ object enumerator extends Serializable
         if (it != '*') {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-          val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-          val invalids = generateOtherListDelete(list, listEtoiles, nTests)
+          val invalids = generateOtherListDelete(list, nTests)
 
           //On ajoute dans la grosse liste des invalides
           certifiedInvalidGuys or invalids

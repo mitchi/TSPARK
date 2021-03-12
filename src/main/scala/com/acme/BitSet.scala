@@ -151,6 +151,19 @@ class BitSet(numBits: Int) extends Serializable {
   }
 
   /**
+    * Compute OR in place
+    * Both bitsets have the same size, always
+    * Fonction de Edmond
+    * @param other
+    */
+  def or(other: BitSet): Unit = {
+    for (i <- 0 until other.words.length) {
+      words(i) = words(i) | other.words(i)
+    }
+  }
+
+
+  /**
     * Set all the bits up to a given index
     */
   def setUntil(bitIndex: Int): Unit = {
@@ -217,6 +230,8 @@ class BitSet(numBits: Int) extends Serializable {
     }
     newBS
   }
+
+
 
   /**
     * Compute the symmetric difference by performing bit-wise XOR of the two sets returning the

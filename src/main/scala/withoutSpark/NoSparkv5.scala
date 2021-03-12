@@ -20,20 +20,11 @@ object NoSparkv5 extends Serializable {
   var debug = false
 
 
-  def generateOtherListDelete(list: RoaringBitmap,
-                        etoiles: RoaringBitmap, nTests: Int) = {
+  def generateOtherListDelete(list: RoaringBitmap, nTests: Int) = {
 
-    // if (debug == true) println(s"L: $list")
-    // if (debug == true) println(s"E: $etoiles")
     val possiblyValidGuys = list.clone()
-    possiblyValidGuys.or(etoiles)
-
     possiblyValidGuys.flip(0.toLong
       , nTests)
-
-    //if (debug == true) println(s"|: $possiblyValidGuys")
-
-    //if (debug == true)println(s"^: $possiblyValidGuys")
     possiblyValidGuys
   }
 
@@ -72,7 +63,7 @@ object NoSparkv5 extends Serializable {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
           val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-          val invalids = generateOtherListDelete(list, listEtoiles, nTests)
+          val invalids = generateOtherListDelete(list, nTests)
 
           //On ajoute dans la grosse liste des invalides
           certifiedInvalidGuys or invalids
@@ -81,7 +72,6 @@ object NoSparkv5 extends Serializable {
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
       }
-
       //CertifiedInvalidGuys contient la liste de tous les tests qui ne fonctionnent pas.
       //On inverse la liste pour obtenir les tests qui fonctionnent
       //Si cette liste n'est pas vide, il existe un test qui détruit ce combo
@@ -102,7 +92,6 @@ object NoSparkv5 extends Serializable {
       true
     else
       false
-
   }
   /**
     *

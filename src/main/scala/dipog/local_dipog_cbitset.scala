@@ -3,7 +3,6 @@ package dipog
 import central.gen.isComboHere
 import com.acme.BitSet
 import enumerator.enumerator.{genPartialCombos, growby1, localGenCombos2, verify}
-import org.apache.spark.{SparkConf, SparkContext}
 import utils.utils._
 
 import scala.collection.mutable.ArrayBuffer
@@ -93,17 +92,17 @@ object local_dipog_cbitset extends Serializable {
     * @param etoiles
     * @return
     */
-  def generateOtherDelete(list: BitSet,
-                          etoiles: BitSet, numberTests: Long) = {
+  def generateOtherDelete(list: BitSet, numberTests: Long) = {
 
     var possiblyValidGuys = list.clone()
-    possiblyValidGuys = possiblyValidGuys | etoiles
     possiblyValidGuys.notEverything()
     possiblyValidGuys
   }
 
   /**
     * Petit algorithme pour effacer plus rapidement les combos
+    *
+    * Bugfix: Pas le droit d'utiliser les étoiles du test pour delete des combos
     *
     * @param testSuite
     * @param combos
@@ -118,7 +117,6 @@ object local_dipog_cbitset extends Serializable {
 
     val numberOfTests = nouveauxTests.size
     val tableau: Array[Array[BitSet]] = initTableau(n, v, nbrBits)
-    val etoiles: Array[BitSet] = initTableauEtoiles(n, nbrBits)
 
     //Le id du test, on peut le générer ici sans problème
     var i = -1
@@ -127,7 +125,6 @@ object local_dipog_cbitset extends Serializable {
       (test, i.toLong)
     })
 
-    addTableauEtoiles(etoiles, a, n)
     addToTableau(tableau, a, n, v)
 
     //Pour tous les combos du RDD
@@ -138,9 +135,9 @@ object local_dipog_cbitset extends Serializable {
         if (it != '*') {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-          val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-          val invalids = generateOtherDelete(list, listEtoiles, numberOfTests)
-          certifiedInvalidGuys = certifiedInvalidGuys | invalids
+          val invalids = generateOtherDelete(list, numberOfTests)
+         // certifiedInvalidGuys = certifiedInvalidGuys | invalids
+          certifiedInvalidGuys or invalids
         }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
@@ -158,8 +155,6 @@ object local_dipog_cbitset extends Serializable {
     //On retourne le RDD (maintenant filtré))
     r1.toArray
   }
-
-
 
   /**
     * On crée le tableau qu'on va utiliser.
@@ -279,7 +274,8 @@ object local_dipog_cbitset extends Serializable {
                         etoiles: BitSet, nTests: Int) = {
 
     var possiblyValidGuys = list.clone()
-    possiblyValidGuys =  possiblyValidGuys | etoiles
+   // possiblyValidGuys =  possiblyValidGuys | etoiles
+    possiblyValidGuys or etoiles
     possiblyValidGuys.notEverything()
 
     possiblyValidGuys
@@ -309,7 +305,8 @@ object local_dipog_cbitset extends Serializable {
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
         val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
         val invalids = generateOtherList(list, listEtoiles, nTests)
-        certifiedInvalidGuys = certifiedInvalidGuys | invalids
+        //certifiedInvalidGuys = certifiedInvalidGuys | invalids
+        certifiedInvalidGuys or invalids
       } //fin du if pour le skip étoile
       i += 1
     } //fin for pour chaque paramètre du combo
@@ -472,8 +469,8 @@ object local_dipog_cbitset extends Serializable {
       //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500).localCheckpoint()
       val teststests = newTests.toArray
       //Reset global counters
-      //newCombos = fastDeleteCombo(teststests, v, newCombos, m)
-      newCombos = progressive_filter_combo(teststests, newCombos, 500)
+      newCombos = fastDeleteCombo(teststests, v, newCombos, m)
+     // newCombos = progressive_filter_combo(teststests, newCombos, 500)
 
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {
@@ -606,9 +603,9 @@ object local_dipog_cbitset extends Serializable {
   */
 object test_localdipog_cbitset extends App {
 
-  var n = 100
-  var t = 2
-  var v = 2
+  var n = 8
+  var t = 7
+  var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
   import dipog.local_dipog_cbitset.start
@@ -616,7 +613,7 @@ object test_localdipog_cbitset extends App {
 
   compressRuns = true
   var seed = System.nanoTime()
-  seed = 20
+ // seed = 20
   val tests = start(n, t, v, 100, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
@@ -629,12 +626,12 @@ object test_localdipog_cbitset extends App {
   if (answer == true) println("Test suite is verified")
   else println("Test suite is not verified")
 
-  import central.gen.verifyTestSuite
-  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")
-  val sc = new SparkContext(conf)
-  sc.setLogLevel("OFF")
-  val answer2 = verifyTestSuite(tests, sc.makeRDD(combos), sc)
-  if (answer2 == true) println("Test suite is verified with OG algorithm")
-  else println("Test suite is not verified with OG algorithm")
+//  import central.gen.verifyTestSuite
+//  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")
+//  val sc = new SparkContext(conf)
+//  sc.setLogLevel("OFF")
+//  val answer2 = verifyTestSuite(tests, sc.makeRDD(combos), sc)
+//  if (answer2 == true) println("Test suite is verified with OG algorithm")
+//  else println("Test suite is not verified with OG algorithm")
 
 }

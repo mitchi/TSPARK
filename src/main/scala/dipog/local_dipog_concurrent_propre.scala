@@ -30,11 +30,9 @@ object local_dipog_concurrent_propre extends Serializable {
     * @param etoiles
     * @return
     */
-  def generateOtherDelete(list: RoaringBitmap,
-                          etoiles: RoaringBitmap, numberTests: Long) = {
+  def generateOtherDelete(list: RoaringBitmap, numberTests: Long) = {
 
     val possiblyValidGuys = list.clone()
-    possiblyValidGuys.or(etoiles)
     possiblyValidGuys.flip(0.toLong
       , numberTests)
     possiblyValidGuys
@@ -55,7 +53,6 @@ object local_dipog_concurrent_propre extends Serializable {
 
     val numberOfTests = nouveauxTests.size
     val tableau: Array[Array[RoaringBitmap]] = initTableau(n, v)
-    val etoiles: Array[RoaringBitmap] = initTableauEtoiles(n)
 
     //Le id du test, on peut le générer ici sans problème
     var i = -1
@@ -64,7 +61,6 @@ object local_dipog_concurrent_propre extends Serializable {
       (test, i.toLong)
     })
 
-    addTableauEtoiles(etoiles, a, n, v)
     addToTableau(tableau, a, n, v)
 
     //Pour tous les combos du RDD
@@ -75,23 +71,45 @@ object local_dipog_concurrent_propre extends Serializable {
         if (it != '*') {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-          val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-          val invalids = generateOtherDelete(list, listEtoiles, numberOfTests)
+          val invalids = generateOtherDelete(list, numberOfTests)
           certifiedInvalidGuys or invalids
         }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
       }
 
-      certifiedInvalidGuys.flip(0.toLong
-        , numberOfTests)
+      //On flip tous les certifiés mauvais pour obtenir la liste de ceux qui sont compatibles
+      //Donc, si cette liste est pleine, on a pas besoin de faire le flip
+      //Il faut donc que certificedInvalidGuys contienne le même nombre que le nombre de tests
+      //Quand cardinalité de certifiedInvalidGuys = nombre de Tests, on est sûr que le flip va produire l'ensemble vide
+      //Quand on a l'ensemble non-vide après le flip, il contient les tests qui peuvent détruire ce combo
+      //Et donc on détruit le combo
 
-      val it = certifiedInvalidGuys.getBatchIterator
-      if (it.hasNext == true) {
-        None
-      } else {
-        Some(combo)
+      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
+      if (cardinalityBeforeFlip == numberOfTests) {
+         Some(combo)
       }
+      else None
+     // var deadCombo = true
+//      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
+//      if (cardinalityBeforeFlip == numberOfTests) {
+//            deadCombo = false
+//      }
+//      else deadCombo = true
+
+
+//      certifiedInvalidGuys.flip(0.toLong
+//        , numberOfTests)
+//      //var cardinalityAfterFlip = certifiedInvalidGuys.getCardinality
+//
+//      val it = certifiedInvalidGuys.getBatchIterator
+//      if (it.hasNext == true) {
+//       // println(s"Deleting the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
+//        None
+//      } else {
+//       // println(s"Keeping the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
+//        Some(combo)
+//      }
     })
     //On retourne le RDD (maintenant filtré))
     r1.toArray
@@ -466,9 +484,9 @@ object local_dipog_concurrent_propre extends Serializable {
 /**
   * Petit objet pour tester cet algorithme, rien de trop compliqué
   */
-object test_localdipog_concurrentbitset extends App {
+object test_localdipog_concurrentbitset_propre extends App {
 
-  var n = 8
+  var n = 10
   var t = 7
   var v = 4
 
@@ -479,7 +497,7 @@ object test_localdipog_concurrentbitset extends App {
   compressRuns = true
   var seed = System.nanoTime()
   seed = 246491073846900L
-  val tests = start(n, t, v, 50, 100000, "OC", seed)
+  val tests = start(n, t, v, 100, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
