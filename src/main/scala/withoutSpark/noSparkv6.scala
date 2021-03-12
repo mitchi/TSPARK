@@ -4,6 +4,7 @@ import cmdlineparser.TSPARK.compressRuns
 import com.acme.BitSet
 import enumerator.enumerator.{localGenCombos2, verify}
 import ordercoloring.OrderColoring.mergeTests
+import org.apache.spark.{SparkConf, SparkContext}
 import org.roaringbitmap.RoaringBitmap
 import utils.utils
 
@@ -537,4 +538,15 @@ object testNoSparkv6 extends App {
   val answer = verify(tests, n, v, localGenCombos2(n,t,v, seed))
   if (answer == true) println("Test suite is verified")
   else println("Test suite is not verified")
+
+  import central.gen.verifyTestSuite
+  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")
+  val sc = new SparkContext(conf)
+  sc.setLogLevel("OFF")
+  val answer2 = verifyTestSuite(tests, sc.makeRDD(localGenCombos2(n,t,v, seed)), sc)
+  if (answer2 == true) println("Test suite is verified with OG algorithm")
+  else println("Test suite is not verified with OG algorithm")
+
+
+
 }

@@ -1,7 +1,9 @@
 package dipog
 
+import central.gen.isComboHere
 import com.acme.BitSet
 import enumerator.enumerator.{genPartialCombos, growby1, localGenCombos2, verify}
+import org.apache.spark.{SparkConf, SparkContext}
 import utils.utils._
 
 import scala.collection.mutable.ArrayBuffer
@@ -20,6 +22,70 @@ object local_dipog_cbitset extends Serializable {
   import cmdlineparser.TSPARK.save //Variable globale save, qui existe dans l'autre source file
 
   /**
+      Version No-Spark de Filter Combo
+    */
+  def filter_combo(combo: Array[Char], bv: Array[Array[Char]], t: Int): Boolean = {
+
+    //Search all the broadcasted tests to see if the combo is there
+    var i = 0
+    var end = bv.length
+    var returnValue = false
+    val tests = bv
+
+    def loop(): Unit = {
+      if (i == end) return
+      if (isComboHere(combo, tests(i), t)) {
+        returnValue = true
+        return
+      }
+      i += 1
+      loop
+    }
+
+    loop
+
+    !returnValue
+  }
+
+  /**
+    * The problem with the filter combo technique is that it can be very slow when the test suite becomes very large.
+    * It is better to filter using a fixed number of tests at a time. Otherwise we will be testing the same combos multiple times.
+    *
+    * @param testSuite
+    * @param combos
+    */
+  def progressive_filter_combo(testSuite: Array[Array[Char]], combos: Array[Array[Char]], speed: Int = 500): Array[Array[Char]] = {
+    //Pick 1000 tests and filter the combos with them
+    //Find out what the t value is
+    var t = findTFromCombo(combos(0))
+    var i = 0
+
+    val testSuiteSize = testSuite.length
+    var filtered = combos
+
+    //filtered.cache()
+    def loop(): Unit = {
+
+      val j = if (i + speed > testSuiteSize) testSuiteSize else i + speed
+      val broadcasted_tests = (testSuite.slice(i, j))
+      //Broadcast and filter using these new tests
+      println("Broadcasting the tests, and filtering them")
+      filtered = filtered.filter(combo => filter_combo(combo, broadcasted_tests, t))
+
+      println("Number of combos after filter " + filtered.size )
+      if ((i + speed > testSuiteSize)) return //if this was the last of the tests
+      i = j //update our i
+      loop
+    }
+
+    loop
+    //Return the RDD of combos
+    filtered
+  }
+
+
+
+  /**
     * Ici, on a la garantie que list est non-vide.
     *
     * @param id
@@ -30,8 +96,8 @@ object local_dipog_cbitset extends Serializable {
   def generateOtherDelete(list: BitSet,
                           etoiles: BitSet, numberTests: Long) = {
 
-    val possiblyValidGuys = list.clone()
-    possiblyValidGuys | etoiles
+    var possiblyValidGuys = list.clone()
+    possiblyValidGuys = possiblyValidGuys | etoiles
     possiblyValidGuys.notEverything()
     possiblyValidGuys
   }
@@ -46,7 +112,8 @@ object local_dipog_cbitset extends Serializable {
   def fastDeleteCombo(nouveauxTests: Array[Array[Char]], v: Int,
                       combos: Array[Array[Char]], nbrBits: Int): Array[Array[Char]] = {
 
-    if (nouveauxTests.isEmpty) return combos
+    if (nouveauxTests.isEmpty)
+      return combos
     val n = nouveauxTests(0).size
 
     val numberOfTests = nouveauxTests.size
@@ -73,7 +140,7 @@ object local_dipog_cbitset extends Serializable {
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
           val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
           val invalids = generateOtherDelete(list, listEtoiles, numberOfTests)
-          certifiedInvalidGuys | invalids
+          certifiedInvalidGuys = certifiedInvalidGuys | invalids
         }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
@@ -211,8 +278,8 @@ object local_dipog_cbitset extends Serializable {
   def generateOtherList(list: BitSet,
                         etoiles: BitSet, nTests: Int) = {
 
-    val possiblyValidGuys = list.clone()
-    possiblyValidGuys | etoiles
+    var possiblyValidGuys = list.clone()
+    possiblyValidGuys =  possiblyValidGuys | etoiles
     possiblyValidGuys.notEverything()
 
     possiblyValidGuys
@@ -231,7 +298,7 @@ object local_dipog_cbitset extends Serializable {
                 etoiles: Array[BitSet], nTests: Int, nbrBits: Int) = {
 
     var i = 0 //quel paramètre?
-    val certifiedInvalidGuys = BitSet(nbrBits)
+    var certifiedInvalidGuys = BitSet(nbrBits)
 
     //On enlève le premier paramètre
     var slicedCombo = combo.slice(1, combo.length)
@@ -242,7 +309,7 @@ object local_dipog_cbitset extends Serializable {
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
         val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
         val invalids = generateOtherList(list, listEtoiles, nTests)
-        certifiedInvalidGuys | invalids
+        certifiedInvalidGuys = certifiedInvalidGuys | invalids
       } //fin du if pour le skip étoile
       i += 1
     } //fin for pour chaque paramètre du combo
@@ -337,6 +404,9 @@ object local_dipog_cbitset extends Serializable {
       var someTests = takeM(tests, m, i)
       if (someTests.size < m) m = someTests.size
 
+      //println("On imprime someTests")
+      //someTests.foreach(print_helper(_))
+
       // val someTests_bcast: Broadcast[ArrayBuffer[Array[Char]]] = sc.broadcast(someTests)
       val nTests = someTests.size
       val tables = genTables(someTests.toArray, n, v, m) //m= nbrBits
@@ -346,7 +416,7 @@ object local_dipog_cbitset extends Serializable {
       //val hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
       val hashmappp = new java.util.concurrent.ConcurrentHashMap[key_v, Int]().asScala
 
-      newCombos.foreach(combo => {
+      newCombos.par.foreach(combo => {
         //val someTests = someTests_bcast.value
         var list = new ArrayBuffer[key_v]()
         val c = combo(0) //Get the version of the combo
@@ -402,7 +472,8 @@ object local_dipog_cbitset extends Serializable {
       //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500).localCheckpoint()
       val teststests = newTests.toArray
       //Reset global counters
-      newCombos = fastDeleteCombo(teststests, v, newCombos, m)
+      //newCombos = fastDeleteCombo(teststests, v, newCombos, m)
+      newCombos = progressive_filter_combo(teststests, newCombos, 500)
 
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {
@@ -557,4 +628,13 @@ object test_localdipog_cbitset extends App {
   val answer = verify(tests, n, v, combos)
   if (answer == true) println("Test suite is verified")
   else println("Test suite is not verified")
+
+  import central.gen.verifyTestSuite
+  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")
+  val sc = new SparkContext(conf)
+  sc.setLogLevel("OFF")
+  val answer2 = verifyTestSuite(tests, sc.makeRDD(combos), sc)
+  if (answer2 == true) println("Test suite is verified with OG algorithm")
+  else println("Test suite is not verified with OG algorithm")
+
 }
