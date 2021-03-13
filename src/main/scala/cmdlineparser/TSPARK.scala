@@ -1,10 +1,9 @@
 package cmdlineparser
 import cmdline.resume_info
 import enumerator.distributed_enumerator.{fastGenCombos, generateParameterVectors, generateValueCombinations}
-import enumerator.enumerator.localGenCombos
+import enumerator.enumerator.{localGenCombos, localGenCombos2, verify}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.backuity.clist.{Cli, Command, arg, opt}
-import withoutSpark.NoSparkv5.fastVerifyTestSuite
 
 import scala.Console.println
 
@@ -55,11 +54,14 @@ object TSPARK {
     var v = arg[Int](name = "v",
       description = "domain size of a parameter")
 
-    var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
-    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size in vertices for graph coloring. Default is 20k", default = 20000)
-    var hstep = opt[Int](name = "hstep", description = "Number of horizontal covering iterations. Default is 100", default = -1)
-    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
     var algorithm = opt[String](name = "algorithm", description = "Which algorithm to use (KP or OC)", default = "OC")
+
+    var chunkSize = opt[Int](name = "chunksize", description = "Chunk size in vertices for graph coloring. Default is 20k", default = 20000)
+    var hstep = opt[Int](name = "hstep", description = "Number of horizontal covering iterations. Default is 100", default = 100)
+    var seed = opt[Long](name = "seed", description = "Enter the seed (LONG)", default = -1)
+
+    var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
+    var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
     var save = opt[Boolean](name = "save", abbrev = "s", description = "Save the test suite to a file")
     var bitset = opt[Boolean](name = "bitset", abbrev = "b", description = "Use uncompressed bit set as the main data structure")
     var local = opt[Boolean](name = "local", abbrev = "l", description = "Compute without Apache Spark")
@@ -357,10 +359,9 @@ object TSPARK {
 
     choice match {
 
-
       case Some(ExperimentalIPOG) => {
 
-        import dipog.dipog_coloring2.start
+        import dipog.spark_dipog_roaring.start
 
         val n = ExperimentalIPOG.n
         val t = ExperimentalIPOG.t
@@ -368,22 +369,30 @@ object TSPARK {
         save = ExperimentalIPOG.save
         val chunkSize = ExperimentalIPOG.chunkSize
         val hstep = ExperimentalIPOG.hstep
-        val verify = ExperimentalIPOG.verify
+        val bverify = ExperimentalIPOG.verify
         val algorithm = ExperimentalIPOG.algorithm //Default is OC, Order Coloring
         compressRuns = ExperimentalIPOG.compressRuns
         val bitset = ExperimentalIPOG.bitset
         val isLocal = ExperimentalIPOG.local
 
-        val seed = System.nanoTime()
-        val tests = start(n, t, v, sc, hstep, chunkSize, algorithm)
+        var seed = ExperimentalIPOG.seed
+        if (seed == -1) seed = System.nanoTime()
+        val tests = start(n, t, v, sc, hstep, chunkSize, algorithm, seed)
 
-        //Verify the test suite (optional)
-        if (verify == true) {
-          val combos: Array[(Array[Char], Long)] = localGenCombos(n, t, v, seed)
-          val answer = fastVerifyTestSuite(tests, n, v, combos)
+        if (bverify == true) {
+          println("\n\nVerifying test suite ... ")
+          val answer = verify(tests, n, v, localGenCombos2(n,t,v, seed))
           if (answer == true) println("Test suite is verified")
           else println("Test suite is not verified")
         }
+
+//        //Verify the test suite (optional)
+//        if (verify == true) {
+//          val combos: Array[(Array[Char], Long)] = localGenCombos(n, t, v, seed)
+//          val answer = fastVerifyTestSuite(tests, n, v, combos)
+//          if (answer == true) println("Test suite is verified")
+//          else println("Test suite is not verified")
+//        }
 
       }
 

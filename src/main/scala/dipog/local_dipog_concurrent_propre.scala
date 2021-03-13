@@ -189,9 +189,6 @@ object local_dipog_concurrent_propre extends Serializable {
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
         val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
         val invalids = generateOtherList(list, listEtoiles, nTests)
-
-        invalids.getCardinality
-
         certifiedInvalidGuys or invalids
       } //fin du if pour le skip étoile
       i += 1

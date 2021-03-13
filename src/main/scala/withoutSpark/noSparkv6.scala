@@ -184,7 +184,7 @@ object NoSparkv6 extends Serializable {
 
     println("Using the Order Coloring algorithm to color the graph...")
     val t1 = System.nanoTime()
-    val a: (Int, Int) = ordercoloringRoaring(colors, r1, i, maxColor)
+    val a: (Int, Int) = ordercoloringRoaring(colors, r1.toArray, i, maxColor)
     val t2 = System.nanoTime()
     val time_elapsed = (t2 - t1).toDouble / 1000000000
     println(s"Time elapsed for Order Coloring: $time_elapsed seconds")
@@ -534,7 +534,6 @@ object testNoSparkv6 extends App {
   tests foreach (utils.print_helper(_))
 
   println("\n\nVerifying test suite ... ")
-
   val answer = verify(tests, n, v, localGenCombos2(n,t,v, seed))
   if (answer == true) println("Test suite is verified")
   else println("Test suite is not verified")
