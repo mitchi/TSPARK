@@ -354,7 +354,8 @@ object spark_dipog_roaring extends Serializable {
 
       //Todo: ajouter la version plus rapide
       //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500).localCheckpoint()
-      newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc).localCheckpoint()
+      newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc)
+      newCombos.localCheckpoint()
 
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {

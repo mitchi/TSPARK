@@ -362,6 +362,7 @@ object TSPARK {
       case Some(ExperimentalIPOG) => {
 
         import dipog.spark_dipog_roaring.start
+        import dipog.spark_dipog_bitset.start_bitset
 
         val n = ExperimentalIPOG.n
         val t = ExperimentalIPOG.t
@@ -377,7 +378,15 @@ object TSPARK {
 
         var seed = ExperimentalIPOG.seed
         if (seed == -1) seed = System.nanoTime()
-        val tests = start(n, t, v, sc, hstep, chunkSize, algorithm, seed)
+
+        val tests =
+          if (bitset == false) {
+            println("Using Roaring Bitmaps...")
+            start(n, t, v, sc, hstep, chunkSize, algorithm, seed)
+          } else {
+            println("Using BitSets...")
+            start_bitset(n,t,v, sc, hstep, chunkSize, algorithm, seed)
+          }
 
         if (bverify == true) {
           println("\n\nVerifying test suite ... ")
