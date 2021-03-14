@@ -12,7 +12,7 @@ import scala.jdk.CollectionConverters._
   *  Fonctionne plutot bien
   */
 
-object local_dipog_concurrent_propre extends Serializable {
+object local_dipog_concurrent_propre2 extends Serializable {
   //Nom standard pour les résultats
   val filename = "results.txt"
   var debug = false
@@ -30,11 +30,10 @@ object local_dipog_concurrent_propre extends Serializable {
     * @param etoiles
     * @return
     */
-  def generateOtherDelete(list: RoaringBitmap, numberTests: Long) = {
+  def generateOtherDelete(list: RoaringBitmap, numberTests: Long, xorbm: RoaringBitmap) = {
 
     val possiblyValidGuys = list.clone()
-    possiblyValidGuys.flip(0.toLong
-      , numberTests)
+    possiblyValidGuys.xor(xorbm)
     possiblyValidGuys
   }
 
@@ -54,12 +53,16 @@ object local_dipog_concurrent_propre extends Serializable {
     val numberOfTests = nouveauxTests.size
     val tableau: Array[Array[RoaringBitmap]] = initTableau(n, v)
 
+    val xorbm = new RoaringBitmap()
+
     //Le id du test, on peut le générer ici sans problème
     var i = -1
     val a: Array[(Array[Char], Long)] = nouveauxTests.map(test => {
-      i += 1
+      i += 1; xorbm.add(i)
       (test, i.toLong)
     })
+
+    //xorbm.runOptimize() //On transforme en gros range. Super compressé. Peut-être que c'est plus rapide comme ça?
 
     addToTableau(tableau, a, n, v)
 
@@ -71,7 +74,7 @@ object local_dipog_concurrent_propre extends Serializable {
         if (it != '*') {
           val paramVal = it - '0'
           val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-          val invalids = generateOtherDelete(list, numberOfTests)
+          val invalids = generateOtherDelete(list, numberOfTests, xorbm)
           certifiedInvalidGuys or invalids
         }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
@@ -85,31 +88,16 @@ object local_dipog_concurrent_propre extends Serializable {
       //Quand on a l'ensemble non-vide après le flip, il contient les tests qui peuvent détruire ce combo
       //Et donc on détruit le combo
 
-      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
-      if (cardinalityBeforeFlip == numberOfTests) {
-         Some(combo)
+      //On reflip tout
+      certifiedInvalidGuys.xor(xorbm)
+      val it = certifiedInvalidGuys.getBatchIterator
+      if (it.hasNext == true) {
+       // println(s"Deleting the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
+        None
+      } else {
+       // println(s"Keeping the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
+        Some(combo)
       }
-      else None
-     // var deadCombo = true
-//      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
-//      if (cardinalityBeforeFlip == numberOfTests) {
-//            deadCombo = false
-//      }
-//      else deadCombo = true
-
-
-//      certifiedInvalidGuys.flip(0.toLong
-//        , numberOfTests)
-//      //var cardinalityAfterFlip = certifiedInvalidGuys.getCardinality
-//
-//      val it = certifiedInvalidGuys.getBatchIterator
-//      if (it.hasNext == true) {
-//       // println(s"Deleting the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
-//        None
-//      } else {
-//       // println(s"Keeping the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
-//        Some(combo)
-//      }
     })
     //On retourne le RDD (maintenant filtré))
     r1.toArray
@@ -481,14 +469,14 @@ object local_dipog_concurrent_propre extends Serializable {
 /**
   * Petit objet pour tester cet algorithme, rien de trop compliqué
   */
-object test_localdipog_concurrentbitset_propre extends App {
+object test_localdipog_concurrentbitset_propre2 extends App {
 
   var n = 8
   var t = 7
   var v = 3
 
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.local_dipog_concurrent_propre.start
+  import dipog.local_dipog_concurrent_propre2.start
   import enumerator.enumerator.localGenCombos2
 
   compressRuns = true

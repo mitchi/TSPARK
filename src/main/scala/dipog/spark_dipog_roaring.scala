@@ -29,6 +29,7 @@ object spark_dipog_roaring extends Serializable {
     val possiblyValidGuys = list.clone()
     possiblyValidGuys.flip(0.toLong
       , numberTests)
+
     possiblyValidGuys
   }
 
@@ -80,11 +81,13 @@ object spark_dipog_roaring extends Serializable {
       //Quand on a l'ensemble non-vide après le flip, il contient les tests qui peuvent détruire ce combo
       //Et donc on détruit le combo
 
-      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
-      if (cardinalityBeforeFlip == numberOfTests) {
-        Some(combo)
-      }
-      else None
+      //Méthode alternative: Calcul de la cardinalité
+//      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
+//      if (cardinalityBeforeFlip == numberOfTests) {
+//        Some(combo)
+//      }
+//      else None
+
       // var deadCombo = true
       //      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
       //      if (cardinalityBeforeFlip == numberOfTests) {
@@ -92,18 +95,19 @@ object spark_dipog_roaring extends Serializable {
       //      }
       //      else deadCombo = true
 
-      //      certifiedInvalidGuys.flip(0.toLong
-      //        , numberOfTests)
-      //      //var cardinalityAfterFlip = certifiedInvalidGuys.getCardinality
-      //
-      //      val it = certifiedInvalidGuys.getBatchIterator
-      //      if (it.hasNext == true) {
-      //       // println(s"Deleting the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
-      //        None
-      //      } else {
-      //       // println(s"Keeping the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
-      //        Some(combo)
-      //      }
+            certifiedInvalidGuys.flip(0.toLong
+              , numberOfTests)
+
+            //var cardinalityAfterFlip = certifiedInvalidGuys.getCardinality
+
+            val it = certifiedInvalidGuys.getBatchIterator
+            if (it.hasNext == true) {
+             // println(s"Deleting the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
+              None
+            } else {
+             // println(s"Keeping the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
+              Some(combo)
+            }
     })
     //On retourne le RDD (maintenant filtré))
     r1

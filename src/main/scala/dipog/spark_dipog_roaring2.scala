@@ -1,191 +1,126 @@
 package dipog
-import central.gen.{isComboHere, verifyTestSuite}
+import central.gen.verifyTestSuite
 import cmdlineparser.TSPARK.resume
-import com.acme.BitSet
 import enumerator.distributed_enumerator.{fastGenCombos, genPartialCombos, growby1}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
+import org.roaringbitmap.RoaringBitmap
 import utils.utils._
+import withoutSpark.NoSparkv5.{addTableauEtoiles, addToTableau, initTableau, initTableauEtoiles}
 
 import scala.collection.mutable.ArrayBuffer
 
-object spark_dipog_bitset extends Serializable {
+object spark_dipog_roaring2 extends Serializable {
   //Nom standard pour les résultats
   val filename = "results.txt"
   var debug = false
   import cmdlineparser.TSPARK.save //Variable globale save, qui existe dans l'autre source file
 
   /**
-  Version No-Spark de Filter Combo
-    */
-  def filter_combo(combo: Array[Char], bv: Array[Array[Char]], t: Int): Boolean = {
-
-    //Search all the broadcasted tests to see if the combo is there
-    var i = 0
-    var end = bv.length
-    var returnValue = false
-    val tests = bv
-
-    def loop(): Unit = {
-      if (i == end) return
-      if (isComboHere(combo, tests(i), t)) {
-        returnValue = true
-        return
-      }
-      i += 1
-      loop
-    }
-
-    loop
-
-    !returnValue
-  }
-
-  /**
-    * The problem with the filter combo technique is that it can be very slow when the test suite becomes very large.
-    * It is better to filter using a fixed number of tests at a time. Otherwise we will be testing the same combos multiple times.
-    *
-    * @param testSuite
-    * @param combos
-    */
-  def progressive_filter_combo(testSuite: Array[Array[Char]], combos: Array[Array[Char]], speed: Int = 500): Array[Array[Char]] = {
-    //Pick 1000 tests and filter the combos with them
-    //Find out what the t value is
-    var t = findTFromCombo(combos(0))
-    var i = 0
-
-    val testSuiteSize = testSuite.length
-    var filtered = combos
-
-    //filtered.cache()
-    def loop(): Unit = {
-
-      val j = if (i + speed > testSuiteSize) testSuiteSize else i + speed
-      val broadcasted_tests = (testSuite.slice(i, j))
-      //Broadcast and filter using these new tests
-      println("Broadcasting the tests, and filtering them")
-      filtered = filtered.filter(combo => filter_combo(combo, broadcasted_tests, t))
-
-      println("Number of combos after filter " + filtered.size )
-      if ((i + speed > testSuiteSize)) return //if this was the last of the tests
-      i = j //update our i
-      loop
-    }
-
-    loop
-    //Return the RDD of combos
-    filtered
-  }
-
-
-
-  /**
-    * Ici, on a la garantie que list est non-vide.
+    * Même chose que spark_dipog_roaring, sauf qu'ici on utilise un XOR sur une RoaringBitmap pour faire le flip
+    * Je pense que c'est plus rapide.
     *
     * @param id
     * @param list
     * @param etoiles
     * @return
     */
-  def generateOtherDelete(list: BitSet, numberTests: Long) = {
+  def generateOtherDelete(list: RoaringBitmap, numberTests: Long, fullBitMap: RoaringBitmap) = {
 
-    var possiblyValidGuys = list.clone()
-    possiblyValidGuys.notEverything()
+    val possiblyValidGuys = list.clone()
+    //   possiblyValidGuys.flip(0.toLong
+    //    , numberTests)
+    possiblyValidGuys.xor(fullBitMap)
+
     possiblyValidGuys
   }
 
   /**
     * Petit algorithme pour effacer plus rapidement les combos
     *
-    * Bugfix: Pas le droit d'utiliser les étoiles du test pour delete des combos
-    *
     * @param testSuite
     * @param combos
     * @return true if the test suite validates
     */
   def fastDeleteCombo(nouveauxTests: Array[Array[Char]], v: Int,
-                      combos: RDD[Array[Char]], nbrBits: Int, sc : SparkContext): RDD[Array[Char]] = {
+                      combos: RDD[Array[Char]], sc: SparkContext): RDD[Array[Char]] = {
 
-    if (nouveauxTests.isEmpty)
-      return combos
+    if (nouveauxTests.isEmpty) return combos
     val n = nouveauxTests(0).size
 
     val numberOfTests = nouveauxTests.size
-    val tableau: Array[Array[BitSet]] = initTableau(n, v, nbrBits)
+    val tableau: Array[Array[RoaringBitmap]] = initTableau(n, v)
+
+    val fullBitMap = new RoaringBitmap()
 
     //Le id du test, on peut le générer ici sans problème
     var i = -1
     val a: Array[(Array[Char], Long)] = nouveauxTests.map(test => {
-      i += 1
+      i += 1; fullBitMap.add(i)
       (test, i.toLong)
     })
 
     addToTableau(tableau, a, n, v)
-
     val tableaubcast = sc.broadcast(tableau)
+    val fullBitMapbcast = sc.broadcast(fullBitMap)
 
     //Pour tous les combos du RDD
     val r1 = combos.flatMap(combo => {
       var i = 0 //quel paramètre?
-      var certifiedInvalidGuys = BitSet(nbrBits)
+      var certifiedInvalidGuys = new RoaringBitmap()
       for (it <- combo) { //pour tous les paramètres de ce combo
         if (it != '*') {
           val paramVal = it - '0'
           val list = tableaubcast.value(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-          val invalids = generateOtherDelete(list, numberOfTests)
-          // certifiedInvalidGuys = certifiedInvalidGuys | invalids
+          val invalids = generateOtherDelete(list, numberOfTests, fullBitMapbcast.value)
           certifiedInvalidGuys or invalids
         }
         //On va chercher la liste des combos qui ont ce paramètre-valeur
         i += 1
       }
 
-      certifiedInvalidGuys.notEverything()
+      //On flip tous les certifiés mauvais pour obtenir la liste de ceux qui sont compatibles
+      //Donc, si cette liste est pleine, on a pas besoin de faire le flip
+      //Il faut donc que certificedInvalidGuys contienne le même nombre que le nombre de tests
+      //Quand cardinalité de certifiedInvalidGuys = nombre de Tests, on est sûr que le flip va produire l'ensemble vide
+      //Quand on a l'ensemble non-vide après le flip, il contient les tests qui peuvent détruire ce combo
+      //Et donc on détruit le combo
 
-      val it = certifiedInvalidGuys.iterator
+      //Méthode alternative: Calcul de la cardinalité
+      //      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
+      //      if (cardinalityBeforeFlip == numberOfTests) {
+      //        Some(combo)
+      //      }
+      //      else None
+
+      // var deadCombo = true
+      //      var cardinalityBeforeFlip = certifiedInvalidGuys.getCardinality
+      //      if (cardinalityBeforeFlip == numberOfTests) {
+      //            deadCombo = false
+      //      }
+      //      else deadCombo = true
+
+
+
+      certifiedInvalidGuys.flip(0.toLong
+        , numberOfTests)
+      //  certifiedInvalidGuys.xor(fullBitMapbcast.value)
+
+
+      //var cardinalityAfterFlip = certifiedInvalidGuys.getCardinality
+
+      val it = certifiedInvalidGuys.getBatchIterator
       if (it.hasNext == true) {
+        // println(s"Deleting the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
         None
       } else {
+        // println(s"Keeping the combo. Number of tests is $numberOfTests, Cardinality before is $cardinalityBeforeFlip, Cardinality after is $cardinalityAfterFlip")
         Some(combo)
       }
     })
     //On retourne le RDD (maintenant filtré))
     r1
   }
-
-  /**
-    * On crée le tableau qu'on va utiliser.
-    * On skip les * lorsqu'on remplit ce tableau avec les valeurs
-    * Ce tableau se fait remplir avec chaque traitement de chunk.
-    *
-    * */
-  def initTableau(n: Int, v: Int, nbrBits: Int) = {
-    var tableau = new Array[Array[BitSet]](n)
-
-    //On met très exactement n paramètres, chacun avec v valeurs. On ne gère pas les *
-    for (i <- 0 until n) {
-      tableau(i) = new Array[BitSet](v)
-      for (v <- 0 until v) {
-        tableau(i)(v) = BitSet(nbrBits)
-      }
-    }
-    tableau
-  }
-
-  /**
-    * On crée un tableau pour gérer seulement les étoiles
-    * Roaring Bitmap dans le tableau
-    */
-  def initTableauEtoiles(n: Int, nbrBits: Int) = {
-    var tableauEtoiles = new Array[BitSet](n)
-
-    for (i <- 0 until n) {
-      tableauEtoiles(i) = BitSet(nbrBits)
-    }
-
-    tableauEtoiles
-  }
-
 
   /**
     * Fast cover using the OX algorithm
@@ -200,9 +135,9 @@ object spark_dipog_bitset extends Serializable {
     * Ce qui est largement mieux
     *
     */
-  def genTables(someTests: Array[Array[Char]], n: Int, v: Int, nbrBits: Int) = {
-    val tableau: Array[Array[BitSet]] = initTableau(n, v, nbrBits)
-    val etoiles: Array[BitSet] = initTableauEtoiles(n, nbrBits)
+  def genTables(someTests: Array[Array[Char]], n: Int, v: Int) = {
+    val tableau: Array[Array[RoaringBitmap]] = initTableau(n, v)
+    val etoiles: Array[RoaringBitmap] = initTableauEtoiles(n)
 
     //Le id du test, on peut le générer ici sans problème
     var i = -1
@@ -211,52 +146,10 @@ object spark_dipog_bitset extends Serializable {
       (test, i.toLong)
     })
 
-    addTableauEtoiles(etoiles, a, n)
+    addTableauEtoiles(etoiles, a, n, v)
     addToTableau(tableau, a, n, v)
 
     (tableau, etoiles)
-  }
-
-  def addTableauEtoiles(etoiles: Array[BitSet],
-                        chunk: Array[(Array[Char], Long)], n: Int) = {
-
-    //On remplit cette structure avec notre chunk
-    for (combo <- chunk) { //pour chaque combo
-      for (i <- 0 until n) { //pour chaque paramètre
-        val cc = combo._1(i)
-        if (cc == '*') {
-          etoiles(i) set (combo._2.toInt) //on ajoute dans le ArrayBuffer . On pourrait mettre l'index global aussi.mmm
-        }
-      }
-    }
-    etoiles
-  }
-
-
-  /**
-    * On recoit un tableau, et on ajoute l'information avec le chunk de combos
-    * On ajoute sans cesse dans le tableau
-    *
-    * @param chunk
-    * @param n
-    * @param v
-    */
-  def addToTableau(tableau: Array[Array[BitSet]],
-                   chunk: Array[(Array[Char], Long)], n: Int, v: Int) = {
-
-    //On remplit cette structure avec notre chunk
-    for (combo <- chunk) { //pour chaque combo
-      for (i <- 0 until n) { //pour chaque paramètre
-        val cc = combo._1(i)
-        if (cc != '*') {
-          val vv = combo._1(i) - '0' //on va chercher la valeur
-          tableau(i)(vv) set combo._2.toInt //on ajoute dans le ArrayBuffer . On pourrait mettre l'index global aussi.mmm
-        }
-      }
-    }
-
-    //On retourne notre travail
-    tableau
   }
 
   /**
@@ -267,13 +160,14 @@ object spark_dipog_bitset extends Serializable {
     * @param etoiles
     * @return
     */
-  def generateOtherList(list: BitSet,
-                        etoiles: BitSet, nTests: Int) = {
+  def generateOtherList(list: RoaringBitmap,
+                        etoiles: RoaringBitmap, nTests: Int) = {
 
-    var possiblyValidGuys = list.clone()
-    // possiblyValidGuys =  possiblyValidGuys | etoiles
-    possiblyValidGuys or etoiles
-    possiblyValidGuys.notEverything()
+    val possiblyValidGuys = list.clone()
+    possiblyValidGuys.or(etoiles)
+
+    possiblyValidGuys.flip(0.toLong
+      , nTests)
 
     possiblyValidGuys
   }
@@ -287,11 +181,11 @@ object spark_dipog_bitset extends Serializable {
     * @param etoiles
     */
   def findValid(combo: Array[Char],
-                tableau: Array[Array[BitSet]],
-                etoiles: Array[BitSet], nTests: Int, nbrBits: Int) = {
+                tableau: Array[Array[RoaringBitmap]],
+                etoiles: Array[RoaringBitmap], nTests: Int) = {
 
     var i = 0 //quel paramètre?
-    var certifiedInvalidGuys = BitSet(nbrBits)
+    val certifiedInvalidGuys = new RoaringBitmap()
 
     //On enlève le premier paramètre
     var slicedCombo = combo.slice(1, combo.length)
@@ -302,16 +196,16 @@ object spark_dipog_bitset extends Serializable {
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
         val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
         val invalids = generateOtherList(list, listEtoiles, nTests)
-        //certifiedInvalidGuys = certifiedInvalidGuys | invalids
         certifiedInvalidGuys or invalids
       } //fin du if pour le skip étoile
       i += 1
     } //fin for pour chaque paramètre du combo
 
     //On flip pour avoir l'ensemble des valides
-    certifiedInvalidGuys.notEverything()
+    certifiedInvalidGuys.flip(0.toLong
+      , nTests)
 
-    val it = certifiedInvalidGuys.iterator
+    val it = certifiedInvalidGuys.getBatchIterator
     if (it.hasNext == true) {
       Some(certifiedInvalidGuys)
     } else {
@@ -408,7 +302,7 @@ object spark_dipog_bitset extends Serializable {
       //Little debug info
       //println(s"i=$i, nTests=$nTests")
 
-      val tables = genTables(someTests.toArray, n, v, m) //m = nbrbits
+      val tables = genTables(someTests.toArray, n, v)
       val tableau = tables._1
       val etoiles = tables._2
       val etoilesbcast = sc.broadcast(etoiles)
@@ -423,15 +317,16 @@ object spark_dipog_bitset extends Serializable {
           var list = new ArrayBuffer[key_v]()
           val c = combo(0) //Get the version of the combo
 
-          val valids: Option[BitSet] = findValid(combo, tableaubcast.value, etoilesbcast.value, nTests, m)
+          val valids: Option[RoaringBitmap] = findValid(combo, tableaubcast.value, etoilesbcast.value, nTests)
 
           if (valids.isDefined) {
-            val it = valids.get.iterator
-            small_loop; def small_loop(): Unit = {
-              while (it.hasNext) {
-                val elem = it.next()
-                if (elem >= m) return
-                list += key_v(elem, c)
+            //Batch iterator ici
+            val it = valids.get.getBatchIterator
+            val buffer = new Array[Int](256)
+            while (it.hasNext) {
+              val batch = it.nextBatch(buffer)
+              for (i <- 0 until batch) {
+                list += key_v(buffer(i), c)
               }
             }
 
@@ -472,7 +367,7 @@ object spark_dipog_bitset extends Serializable {
 
       //Todo: ajouter la version plus rapide
       //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500).localCheckpoint()
-      newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, m, sc)
+      newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc)
       newCombos.localCheckpoint()
 
       //Build a list of tests that did not cover combos
@@ -515,9 +410,9 @@ object spark_dipog_bitset extends Serializable {
     * @param sc
     * @return
     */
-  def start_bitset(n: Int, t: Int, v: Int, sc: SparkContext,
-                   hstep: Int = 100,
-                   chunksize: Int = 20000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
+  def start(n: Int, t: Int, v: Int, sc: SparkContext,
+            hstep: Int = 100,
+            chunksize: Int = 20000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
 
     val expected = numberTWAYCombos(n, t, v)
     println("Distributed IPOG Coloring")
@@ -617,7 +512,7 @@ object spark_dipog_bitset extends Serializable {
 /**
   * Petit objet pour tester cet algorithme, rien de trop compliqué
   */
-object test_spark_dipog_bitset extends App {
+object test_spark_dipog_roaring2 extends App {
 
   val conf = new SparkConf().setMaster("local[*]").
     setAppName("DIPOG COLORING RELEASE ")
@@ -630,11 +525,11 @@ object test_spark_dipog_bitset extends App {
   var t = 7
   var v = 3
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.spark_dipog_bitset.start_bitset
+  import dipog.spark_dipog_roaring2.start
   val seed = System.nanoTime()
 
   compressRuns = true
-  val tests = start_bitset(n, t, v, sc, 100, 100000, "OC", seed)
+  val tests = start(n, t, v, sc, 100, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
   //  println("Printing the tests....")
