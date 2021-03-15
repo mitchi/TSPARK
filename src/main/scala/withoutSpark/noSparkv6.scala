@@ -15,6 +15,7 @@ import utils.utils
 object NoSparkv6 extends Serializable {
 
   var debug = false
+  var filename = "results.txt"
 
 
   def generateOtherListDelete(list: RoaringBitmap,
@@ -507,6 +508,62 @@ object NoSparkv6 extends Serializable {
   def colorBitSet(neighbor_colors: BitSet) = {
     val res = neighbor_colors.nextSetBit(1)
     res
+  }
+
+  /**
+    * The distributed graph coloring algorithm with the fast coloring construction algorithm
+    *
+    * @param n
+    * @param t
+    * @param v
+    * @param sc
+    * @return
+    */
+  def start(n: Int, t: Int, v: Int,
+            chunkSize: Int = 4000, algorithm: String = "OC", seed: Long, useBitSet : Boolean = false) = {
+    val expected = utils.numberTWAYCombos(n, t, v)
+
+    println("Local Graph Coloring using Scala's Parallel collections")
+
+    if (useBitSet == true)
+    println("Using Bitsets...")
+    else {
+      println("Using Roaring Bitmaps...")
+      println(s"Use Run compression for Roaring Bitmap = $compressRuns")
+    }
+
+    println(s"Using a chunk size = $chunkSize vertices and algorithm = $algorithm")
+    println(s"Problem : n=$n,t=$t,v=$v")
+    println(s"Expected number of combinations is : $expected ")
+    println(s"Formula is C($n,$t) * $v^$t")
+
+    import java.io._
+    val pw = new PrintWriter(new FileOutputStream(filename, true))
+    val t1 = System.nanoTime()
+
+    //Roaring Bitmap
+    val result = graphcoloring(localGenCombos2(n,t,v, seed), v)
+
+    if (useBitSet == true) {
+    }
+
+
+    val t2 = System.nanoTime()
+    val time_elapsed = (t2 - t1).toDouble / 1000000000
+
+    val maxColor = result._2
+
+    var datastructure = ""
+    if (useBitSet == true) {
+      datastructure = "bitset"
+    } else datastructure = "roaring_bitmap"
+
+    pw.append(s"$t;$n;$v;LOCAL_COLORING;algorithm=$algorithm;$datastructure;$time_elapsed;$maxColor\n")
+    println(s"$t;$n;$v;LOCAL_COLORING;algorithm=$algorithm;$datastructure;$time_elapsed;$maxColor\n")
+    pw.flush()
+
+    //Return the test suite
+    result._1
   }
 
 }

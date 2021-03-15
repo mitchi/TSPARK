@@ -393,8 +393,8 @@ object local_dipog_concurrent_propre extends Serializable {
     * @param sc
     * @return
     */
-  def start(n: Int, t: Int, v: Int, hstep: Int = 100,
-            chunksize: Int = 40000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
+  def localipog_roaring(n: Int, t: Int, v: Int, hstep: Int = 100,
+                        chunksize: Int = 40000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
 
     val expected = numberTWAYCombos(n, t, v)
     println("Local IPOG Coloring CONCURRENT PROPRE")
@@ -488,13 +488,13 @@ object test_localdipog_concurrentbitset_propre extends App {
   var v = 3
 
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.local_dipog_concurrent_propre.start
+  import dipog.local_dipog_concurrent_propre.localipog_roaring
   import enumerator.enumerator.localGenCombos2
 
   compressRuns = true
   var seed = System.nanoTime()
   seed = 246491073846900L
-  val tests = start(n, t, v, 100, 100000, "OC", seed)
+  val tests = localipog_roaring(n, t, v, 100, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")

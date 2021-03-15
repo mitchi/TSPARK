@@ -1,4 +1,5 @@
 package cmdlineparser
+
 import cmdline.resume_info
 import enumerator.distributed_enumerator.{fastGenCombos, generateParameterVectors, generateValueCombinations}
 import enumerator.enumerator.{localGenCombos, localGenCombos2, verify}
@@ -68,7 +69,7 @@ object TSPARK {
   }
 
   object LocalColoring extends Command(name = "localc",
-    description = "No-Spark Graph Coloring using the Fast Graph construction algorithm, and RoaringBitmaps") with CommonOpt {
+    description = "Local Graph Coloring using Scala Parallel collections") with CommonOpt {
 
     var t = arg[Int](name = "t",
       description = "interaction strength")
@@ -285,17 +286,12 @@ object TSPARK {
   }
 
 
-  def main(args: Array[String]) {
-
-    //A map for global options
-    //val map_parameters = args2maps(args)
-
-    val choice = Cli.parse(args)
-      .version("1.0.0")
-      .withProgramName("TSPARK")
-      .withDescription("a distributed testing tool")
-      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, LocalColoring, ExperimentalIPOG, FastColoring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
-
+  /**
+    * Create the SparkContext from an existing one, or a local[*] if no one is found
+    *
+    * @return
+    */
+  def createSparkContext(): SparkContext = {
     //Create the Spark Context if it does not already exist
     //The options of Spark can be set using the params of the program
     //val conf = new SparkConf().setMaster("local[*]").setAppName("TSPARK")
@@ -350,6 +346,21 @@ object TSPARK {
     //println(s"Printing spark.conf : ${spark.conf}")
     println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
+    sc
+  }
+
+
+  def main(args: Array[String]) {
+
+    //A map for global options
+    //val map_parameters = args2maps(args)
+
+    val choice = Cli.parse(args)
+      .version("1.0.0")
+      .withProgramName("TSPARK")
+      .withDescription("a distributed testing tool")
+      .withCommands(Phiwayparser, Graphviz, edn, Color, ColoringRoaring, LocalColoring, ExperimentalIPOG, FastColoring, D_ipog_coloring_roaring, D_ipog_coloring, D_ipog_hypergraph, Hypergraphcover, Tway, Pv)
+
     import central.gen.{distributed_graphcoloring, simple_hypergraphcover, singlethreadcoloring, verifyTS}
     import ipog.d_ipog._
     import ipog.d_ipog_roaring.distributed_ipog_coloring_roaring
@@ -361,9 +372,12 @@ object TSPARK {
 
       case Some(ExperimentalIPOG) => {
 
-        import dipog.spark_dipog_roaring.start
+        import dipog.local_dipog_cbitset.localipog_bitset
         import dipog.spark_dipog_bitset.start_bitset
+        import dipog.spark_dipog_roaring.start
+        import dipog.local_dipog_concurrent_propre.localipog_roaring
 
+        val isLocal = ExperimentalIPOG.local
         val n = ExperimentalIPOG.n
         val t = ExperimentalIPOG.t
         val v = ExperimentalIPOG.v
@@ -374,351 +388,392 @@ object TSPARK {
         val algorithm = ExperimentalIPOG.algorithm //Default is OC, Order Coloring
         compressRuns = ExperimentalIPOG.compressRuns
         val bitset = ExperimentalIPOG.bitset
-        val isLocal = ExperimentalIPOG.local
-
         var seed = ExperimentalIPOG.seed
         if (seed == -1) seed = System.nanoTime()
 
-        val tests =
-          if (bitset == false) {
-            println("Using Roaring Bitmaps...")
-            start(n, t, v, sc, hstep, chunkSize, algorithm, seed)
-          } else {
-            println("Using BitSets...")
-            start_bitset(n,t,v, sc, hstep, chunkSize, algorithm, seed)
-          }
+        val tt: Array[Array[Char]] = isLocal match {
+          case true =>
+            if (bitset == false) {
+              println("Using Local Algorithm & Roaring Bitmaps...")
+              localipog_roaring(n, t, v, hstep, chunkSize, algorithm, seed)
+            }
+            else {
+              println("Using Local Algorithm & BitSets...")
+              localipog_bitset(n, t, v, hstep, chunkSize, algorithm, seed)
+            }
+
+          case false =>
+            val sc = createSparkContext()
+            if (bitset == false) {
+              println("Using Roaring Bitmaps...")
+              start(n, t, v, sc, hstep, chunkSize, algorithm, seed)
+            } else {
+              println("Using BitSets...")
+              start_bitset(n, t, v, sc, hstep, chunkSize, algorithm, seed)
+            }
+        }
 
         if (bverify == true) {
           println("\n\nVerifying test suite ... ")
-          val answer = verify(tests, n, v, localGenCombos2(n,t,v, seed))
+          val answer = verify(tt, n, v, localGenCombos2(n, t, v, seed))
           if (answer == true) println("Test suite is verified")
           else println("Test suite is not verified")
         }
 
-//        //Verify the test suite (optional)
-//        if (verify == true) {
-//          val combos: Array[(Array[Char], Long)] = localGenCombos(n, t, v, seed)
-//          val answer = fastVerifyTestSuite(tests, n, v, combos)
-//          if (answer == true) println("Test suite is verified")
-//          else println("Test suite is not verified")
-//        }
-
       }
+      //        //Verify the test suite (optional)
+      //        if (verify == true) {
+      //          val combos: Array[(Array[Char], Long)] = localGenCombos(n, t, v, seed)
+      //          val answer = fastVerifyTestSuite(tests, n, v, combos)
+      //          if (answer == true) println("Test suite is verified")
+      //          else println("Test suite is not verified")
+      //        }
 
-      //Implémentation de Fast Coloring
-      case Some(LocalColoring) => {
-        import withoutSpark.NoSparkv5._
-        val n = LocalColoring.n
-        val t = LocalColoring.t
-        val v = LocalColoring.v
-        save = LocalColoring.save
-        val chunkSize = LocalColoring.chunkSize
-        val verify = LocalColoring.verify
-        val algorithm = LocalColoring.algorithm //Default is OC, Order Coloring
-        compressRuns = LocalColoring.compressRuns
-        val bitset = LocalColoring.bitset
 
-        println("Stopping the SparkContext & calling garbage collection")
-        sc.stop() //We don't need the SparkContext
-        sc = null
-        System.gc()
+    //Implémentation de Fast Coloring
+    case Some(LocalColoring) =>
+    {
+      import withoutSpark.NoSparkv6._
+      val n = LocalColoring.n
+      val t = LocalColoring.t
+      val v = LocalColoring.v
+      save = LocalColoring.save
+      val chunkSize = LocalColoring.chunkSize
+      val verify = LocalColoring.verify
+      val algorithm = LocalColoring.algorithm //Default is OC, Order Coloring
+      compressRuns = LocalColoring.compressRuns
+      val bitset = LocalColoring.bitset
 
-        val seed = System.nanoTime()
-        val tests = start(n, t, v, chunkSize, algorithm, seed)
+      val seed = System.nanoTime()
+      val tests = start(n, t, v, chunkSize, algorithm, seed, bitset)
 
-        //Verify the test suite (optional)
-        if (verify == true) {
-          val combos: Array[(Array[Char], Long)] = localGenCombos(n, t, v, seed)
-          val answer = fastVerifyTestSuite(tests, n, v, combos)
-          if (answer == true) println("Test suite is verified")
-          else println("Test suite is not verified")
-        }
+      //Verify the test suite (optional)
+      if (verify == true) {
+        val combos: Array[(Array[Char], Long)] = localGenCombos(n, t, v, seed)
+        val answer = fastVerifyTestSuite(tests, n, v, combos)
+        if (answer == true) println("Test suite is verified")
+        else println("Test suite is not verified")
       }
-
-      //Implémentation de Fast Coloring
-      case Some(FastColoring) => {
-
-        import OXRoaring.RoaringOXColoring2._
-
-        val n = FastColoring.n
-        val t = FastColoring.t
-        val v = FastColoring.v
-
-        useKryo = FastColoring.kryo
-
-        if (useKryo == true) {
-          println("Using the Kryo Serializer...")
-          println("Using a Custom registrator for Kryro for Roaring bitmaps")
-          println("Using spark.kryoserializer.buffer.max=2047m")
-
-          sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
-          sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
-          sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
-
-          sc.getConf.set("spark.kryo.unsafe", "true") //default false
-          sc.getConf.set("spark.broadcast.compress", "false")
-          sc.getConf.set("spark.checkpoint.compress", "true")
-        }
-        else println("We are not using Kryo Serialization. Use the parameter --kryo in order to use it")
-
-        save = FastColoring.save
-        val chunkSize = FastColoring.chunkSize
-        val verify = FastColoring.verify
-        val algorithm = FastColoring.algorithm //Default is OC, Order Coloring
-        compressRuns = FastColoring.compressRuns
-
-        val tests = start(n, t, v, sc, chunkSize, algorithm)
-
-        //Verify the test suite (optional)
-        //        if (verify == true) {
-        //          val combos = fastGenCombos(n, t, v, sc)
-        //          val a = verifyTS(combos, tests, sc)
-        //          if (a == true) println("Test suite is verified")
-        //          else println("This test suite does not cover the combos")
-        //        }
-
-      }
-
-      case Some(Phiwayparser) => {
-
-        val file = Phiwayparser.filename
-        val chunkSize = Phiwayparser.chunkSize
-        val algorithm = Phiwayparser.algo
-        val doSave = Phiwayparser.save
-        if (doSave == true) save = true
-
-        val t = Phiwayparser.t
-
-        val tests = algorithm match {
-          case "HC" => {
-            println("Using the hypergraph covering algorithm")
-            phiway_hypergraphcover(file, sc, t)
-          }
-          case "KP" => {
-            println("Using the Knights and Peasants graph coloring algorithm")
-            start_graphcoloring_phiway(file, t, sc, chunkSize, "KP")
-          }
-          case "OC" => {
-            println("Using the Order Coloring graph coloring algorithm")
-            start_graphcoloring_phiway(file, t, sc, chunkSize, "OC")
-          }
-          case _ => {
-            println(s"Incorrect algorithm $algorithm")
-            Array("")
-          }
-        }
-
-        tests.foreach(println)
-
-        //val tests = start_graphcoloring_phiway(file, sc, chunkSize, "OC")
-
-      }
-
-      /** Distributed IPOG Coloring using Roaring Bitmaps */
-      case Some(D_ipog_coloring_roaring) => {
-        import cmdline.MainConsole.readSeeding
-
-        val n = D_ipog_coloring_roaring.n
-        val t = D_ipog_coloring_roaring.t
-        val v = D_ipog_coloring_roaring.v
-
-        val hstep = D_ipog_coloring_roaring.hstep
-        val verify = D_ipog_coloring_roaring.verify
-        val chunkSize = D_ipog_coloring_roaring.chunkSize
-        val algorithm = D_ipog_coloring_roaring.algorithm
-
-        save = D_ipog_coloring_roaring.save
-        compressRuns = D_ipog_coloring_roaring.compressRuns
-
-        if (save == true) println("Save parameter: True. Saving the test suites to files")
-        if (compressRuns == true) println("Compress runs activated. Better compression for dense graphs")
-
-        val seeding = D_ipog_coloring_roaring.seeding
-
-        //We set the global variable here
-        resume = if (seeding != "") {
-          Some(readSeeding(seeding))
-        } else None
-
-        val tests = distributed_ipog_coloring_roaring(n, t, v, sc, hstep, chunkSize, algorithm)
-
-        //Verify the test suite (optional)
-        if (verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
-        }
-      }
-
-      //Distributed IPOG Coloring CLASSIC (with byte array graphs)
-      case Some(D_ipog_coloring) => {
-
-        val n = D_ipog_coloring.n
-        val t = D_ipog_coloring.t
-        val v = D_ipog_coloring.v
-
-        var hstep = D_ipog_coloring.hstep
-        var verify = D_ipog_coloring.verify
-        var colorings = D_ipog_coloring.colorings
-
-        save = D_ipog_coloring.save //Do we save the generated test suites? This is useful for resuming
-
-
-        println("Setting number of colorings to the default parallelism number")
-        colorings = sc.defaultParallelism
-
-        val tests = distributed_ipog_coloring(n, t, v, sc)
-
-        //Verify the test suite (optional)
-        if (verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
-        }
-      }
-
-      //Distributed IPOG Hypergraph
-      case Some(D_ipog_hypergraph) => {
-
-        val n = D_ipog_hypergraph.n
-        val t = D_ipog_hypergraph.t
-        val v = D_ipog_hypergraph.v
-
-        var hstep = D_ipog_hypergraph.hstep
-        var verify = D_ipog_hypergraph.verify
-        var vstep = D_ipog_hypergraph.vstep
-
-        val tests = distributed_ipog_hypergraph(n, t, v, sc, hstep, vstep)
-
-
-        //Verify the test suite (optional)
-        if (verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
-        }
-
-      }
-
-      //Implémentation de ColoringRoaring
-      case Some(ColoringRoaring) => {
-
-        import central.gen.distributed_graphcoloring_roaring
-
-        val n = ColoringRoaring.n
-        val t = ColoringRoaring.t
-        val v = ColoringRoaring.v
-
-        val chunkSize = ColoringRoaring.chunkSize
-        val verify = ColoringRoaring.verify
-        val algorithm = ColoringRoaring.algorithm //Default is OC, Order Coloring
-
-        compressRuns = ColoringRoaring.compressRuns
-
-        val tests = distributed_graphcoloring_roaring(n, t, v, sc, chunkSize, algorithm)
-
-        //Verify the test suite (optional)
-        if (verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
-        }
-
-      }
-
-
-      //Distributed Graph Coloring
-      //Mise a jour avec roaring bitmaps ici
-      case Some(Coloring) => {
-
-        val n = Coloring.n
-        val t = Coloring.t
-        val v = Coloring.v
-
-        val memory = Coloring.memory
-        val verify = Coloring.verify
-        val algorithm = Coloring.algorithm //Default is OC, Order Coloring
-
-        val tests = distributed_graphcoloring(n, t, v, sc, memory, algorithm)
-
-        //Verify the test suite (optional)
-        if (verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
-        }
-
-      }
-
-      //Hypergraph cover algorithm
-      case Some(Hypergraphcover) => {
-        val n = Hypergraphcover.n
-        val t = Hypergraphcover.t
-        val v = Hypergraphcover.v
-
-        val vstep = Hypergraphcover.vstep
-        val verify = Hypergraphcover.verify
-
-        val tests = simple_hypergraphcover(n, t, v, sc, vstep)
-
-        //Verify the test suite (optional)
-        if (verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
-        }
-
-
-      }
-
-      //Color a graphviz file
-      case Some(Graphviz) => {
-        import graphviz.graphviz_graphs.graphcoloring_graphviz
-
-        val alg = if (Graphviz.st == true) "OrderColoring"
-        else "KP"
-        val maxColor = graphcoloring_graphviz(Graphviz.filename, sc, Graphviz.memory, alg)
-      }
-
-      //Single threaded coloring (Order Coloring)
-      case Some(Color) => {
-
-        val n = Color.n
-        val t = Color.t
-        val v = Color.v
-
-        val tests = singlethreadcoloring(n, t, v, sc, Color.colorings)
-
-        //Verify the test suite (optional)
-        if (Color.verify == true) {
-          val combos = fastGenCombos(n, t, v, sc)
-          val a = verifyTS(combos, tests, sc)
-          if (a == true) println("Test suite is verified")
-          else println("This test suite does not cover the combos")
-        }
-
-      }
-
-      //Generate value combinations
-      case Some(Tway) => {
-        val inOrder = Tway.inOrder
-        if (inOrder)
-          print_combos_in_order(Tway.n, Tway.t, Tway.v, sc)
-        else
-          generateValueCombinations(sc, Tway.n, Tway.t, Tway.v)
-      }
-
-      case Some(Pv) =>
-        generateParameterVectors(sc, Pv.n, Pv.t)
-
-      case None =>
-        println("nothing done")
     }
-  } //fin main function
+
+    //Implémentation de Fast Coloring
+    case Some(FastColoring)
+    =>
+    {
+
+      val sc = createSparkContext()
+
+      import OXRoaring.RoaringOXColoring2._
+
+      val n = FastColoring.n
+      val t = FastColoring.t
+      val v = FastColoring.v
+
+      useKryo = FastColoring.kryo
+
+      if (useKryo == true) {
+        println("Using the Kryo Serializer...")
+        println("Using a Custom registrator for Kryro for Roaring bitmaps")
+        println("Using spark.kryoserializer.buffer.max=2047m")
+
+        sc.getConf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer") //Setting up to use Kryo serializer
+        sc.getConf.set("spark.kryo.registrator", "com.acme.MyRegistrator")
+        sc.getConf.set("spark.kryoserializer.buffer.max", "2047m")
+
+        sc.getConf.set("spark.kryo.unsafe", "true") //default false
+        sc.getConf.set("spark.broadcast.compress", "false")
+        sc.getConf.set("spark.checkpoint.compress", "true")
+      }
+      else println("We are not using Kryo Serialization. Use the parameter --kryo in order to use it")
+
+      save = FastColoring.save
+      val chunkSize = FastColoring.chunkSize
+      val verify = FastColoring.verify
+      val algorithm = FastColoring.algorithm //Default is OC, Order Coloring
+      compressRuns = FastColoring.compressRuns
+
+      val tests = start(n, t, v, sc, chunkSize, algorithm)
+
+      //Verify the test suite (optional)
+      //        if (verify == true) {
+      //          val combos = fastGenCombos(n, t, v, sc)
+      //          val a = verifyTS(combos, tests, sc)
+      //          if (a == true) println("Test suite is verified")
+      //          else println("This test suite does not cover the combos")
+      //        }
+
+    }
+
+    case Some(Phiwayparser)
+    =>
+    {
+
+      val sc = createSparkContext()
+      val file = Phiwayparser.filename
+      val chunkSize = Phiwayparser.chunkSize
+      val algorithm = Phiwayparser.algo
+      val doSave = Phiwayparser.save
+      if (doSave == true) save = true
+
+      val t = Phiwayparser.t
+
+      val tests = algorithm match {
+        case "HC" => {
+          println("Using the hypergraph covering algorithm")
+          phiway_hypergraphcover(file, sc, t)
+        }
+        case "KP" => {
+          println("Using the Knights and Peasants graph coloring algorithm")
+          start_graphcoloring_phiway(file, t, sc, chunkSize, "KP")
+        }
+        case "OC" => {
+          println("Using the Order Coloring graph coloring algorithm")
+          start_graphcoloring_phiway(file, t, sc, chunkSize, "OC")
+        }
+        case _ => {
+          println(s"Incorrect algorithm $algorithm")
+          Array("")
+        }
+      }
+
+      tests.foreach(println)
+
+      //val tests = start_graphcoloring_phiway(file, sc, chunkSize, "OC")
+
+    }
+
+    /** Distributed IPOG Coloring using Roaring Bitmaps */
+    case Some(D_ipog_coloring_roaring)
+    =>
+    {
+      val sc = createSparkContext()
+      import cmdline.MainConsole.readSeeding
+
+      val n = D_ipog_coloring_roaring.n
+      val t = D_ipog_coloring_roaring.t
+      val v = D_ipog_coloring_roaring.v
+
+      val hstep = D_ipog_coloring_roaring.hstep
+      val verify = D_ipog_coloring_roaring.verify
+      val chunkSize = D_ipog_coloring_roaring.chunkSize
+      val algorithm = D_ipog_coloring_roaring.algorithm
+
+      save = D_ipog_coloring_roaring.save
+      compressRuns = D_ipog_coloring_roaring.compressRuns
+
+      if (save == true) println("Save parameter: True. Saving the test suites to files")
+      if (compressRuns == true) println("Compress runs activated. Better compression for dense graphs")
+
+      val seeding = D_ipog_coloring_roaring.seeding
+
+      //We set the global variable here
+      resume = if (seeding != "") {
+        Some(readSeeding(seeding))
+      } else None
+
+      val tests = distributed_ipog_coloring_roaring(n, t, v, sc, hstep, chunkSize, algorithm)
+
+      //Verify the test suite (optional)
+      if (verify == true) {
+        val combos = fastGenCombos(n, t, v, sc)
+        val a = verifyTS(combos, tests, sc)
+        if (a == true) println("Test suite is verified")
+        else println("This test suite does not cover the combos")
+      }
+    }
+
+    //Distributed IPOG Coloring CLASSIC (with byte array graphs)
+    case Some(D_ipog_coloring)
+    =>
+    {
+
+      val sc = createSparkContext()
+      val n = D_ipog_coloring.n
+      val t = D_ipog_coloring.t
+      val v = D_ipog_coloring.v
+
+      var hstep = D_ipog_coloring.hstep
+      var verify = D_ipog_coloring.verify
+      var colorings = D_ipog_coloring.colorings
+
+      save = D_ipog_coloring.save //Do we save the generated test suites? This is useful for resuming
+
+
+      println("Setting number of colorings to the default parallelism number")
+      colorings = sc.defaultParallelism
+
+      val tests = distributed_ipog_coloring(n, t, v, sc)
+
+      //Verify the test suite (optional)
+      if (verify == true) {
+        val combos = fastGenCombos(n, t, v, sc)
+        val a = verifyTS(combos, tests, sc)
+        if (a == true) println("Test suite is verified")
+        else println("This test suite does not cover the combos")
+      }
+    }
+
+    //Distributed IPOG Hypergraph
+    case Some(D_ipog_hypergraph)
+    =>
+    {
+
+      val sc = createSparkContext()
+      val n = D_ipog_hypergraph.n
+      val t = D_ipog_hypergraph.t
+      val v = D_ipog_hypergraph.v
+
+      var hstep = D_ipog_hypergraph.hstep
+      var verify = D_ipog_hypergraph.verify
+      var vstep = D_ipog_hypergraph.vstep
+
+      val tests = distributed_ipog_hypergraph(n, t, v, sc, hstep, vstep)
+
+
+      //Verify the test suite (optional)
+      if (verify == true) {
+        val combos = fastGenCombos(n, t, v, sc)
+        val a = verifyTS(combos, tests, sc)
+        if (a == true) println("Test suite is verified")
+        else println("This test suite does not cover the combos")
+      }
+
+    }
+
+    //Implémentation de ColoringRoaring
+    case Some(ColoringRoaring)
+    =>
+    {
+
+      val sc = createSparkContext()
+      import central.gen.distributed_graphcoloring_roaring
+
+      val n = ColoringRoaring.n
+      val t = ColoringRoaring.t
+      val v = ColoringRoaring.v
+
+      val chunkSize = ColoringRoaring.chunkSize
+      val verify = ColoringRoaring.verify
+      val algorithm = ColoringRoaring.algorithm //Default is OC, Order Coloring
+
+      compressRuns = ColoringRoaring.compressRuns
+
+      val tests = distributed_graphcoloring_roaring(n, t, v, sc, chunkSize, algorithm)
+
+      //Verify the test suite (optional)
+      if (verify == true) {
+        val combos = fastGenCombos(n, t, v, sc)
+        val a = verifyTS(combos, tests, sc)
+        if (a == true) println("Test suite is verified")
+        else println("This test suite does not cover the combos")
+      }
+
+    }
+
+
+    //Distributed Graph Coloring
+    //Mise a jour avec roaring bitmaps ici
+    case Some(Coloring)
+    =>
+    {
+
+      val sc = createSparkContext()
+      val n = Coloring.n
+      val t = Coloring.t
+      val v = Coloring.v
+
+      val memory = Coloring.memory
+      val verify = Coloring.verify
+      val algorithm = Coloring.algorithm //Default is OC, Order Coloring
+
+      val tests = distributed_graphcoloring(n, t, v, sc, memory, algorithm)
+
+      //Verify the test suite (optional)
+      if (verify == true) {
+        val combos = fastGenCombos(n, t, v, sc)
+        val a = verifyTS(combos, tests, sc)
+        if (a == true) println("Test suite is verified")
+        else println("This test suite does not cover the combos")
+      }
+
+    }
+
+    //Hypergraph cover algorithm
+    case Some(Hypergraphcover)
+    =>
+    {
+      val sc = createSparkContext()
+      val n = Hypergraphcover.n
+      val t = Hypergraphcover.t
+      val v = Hypergraphcover.v
+
+      val vstep = Hypergraphcover.vstep
+      val verify = Hypergraphcover.verify
+
+      val tests = simple_hypergraphcover(n, t, v, sc, vstep)
+
+      //Verify the test suite (optional)
+      if (verify == true) {
+        val combos = fastGenCombos(n, t, v, sc)
+        val a = verifyTS(combos, tests, sc)
+        if (a == true) println("Test suite is verified")
+        else println("This test suite does not cover the combos")
+      }
+
+    }
+
+    //Color a graphviz file
+    case Some(Graphviz)
+    =>
+    {
+      val sc = createSparkContext()
+      import graphviz.graphviz_graphs.graphcoloring_graphviz
+
+      val alg = if (Graphviz.st == true) "OrderColoring"
+      else "KP"
+      val maxColor = graphcoloring_graphviz(Graphviz.filename, sc, Graphviz.memory, alg)
+    }
+
+    //Single threaded coloring (Order Coloring)
+    case Some(Color)
+    =>
+    {
+      val sc = createSparkContext()
+      val n = Color.n
+      val t = Color.t
+      val v = Color.v
+
+      val tests = singlethreadcoloring(n, t, v, sc, Color.colorings)
+
+      //Verify the test suite (optional)
+      if (Color.verify == true) {
+        val combos = fastGenCombos(n, t, v, sc)
+        val a = verifyTS(combos, tests, sc)
+        if (a == true) println("Test suite is verified")
+        else println("This test suite does not cover the combos")
+      }
+
+    }
+
+    //Generate value combinations
+    case Some(Tway)
+    =>
+    {
+      val sc = createSparkContext()
+      val inOrder = Tway.inOrder
+      if (inOrder)
+        print_combos_in_order(Tway.n, Tway.t, Tway.v, sc)
+      else
+        generateValueCombinations(sc, Tway.n, Tway.t, Tway.v)
+    }
+
+    case Some(Pv)
+    =>
+    val sc = createSparkContext()
+    generateParameterVectors(sc, Pv.n, Pv.t)
+
+    case None =>
+      println("nothing done")
+  }
+} //fin main function
 }

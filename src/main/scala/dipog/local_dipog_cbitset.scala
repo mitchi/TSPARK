@@ -513,8 +513,8 @@ object local_dipog_cbitset extends Serializable {
     * @param sc
     * @return
     */
-  def start(n: Int, t: Int, v: Int, hstep: Int = 100,
-            chunksize: Int = 40000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
+  def localipog_bitset(n: Int, t: Int, v: Int, hstep: Int = 100,
+                       chunksize: Int = 40000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
 
     val expected = numberTWAYCombos(n, t, v)
     println("Local IPOG Coloring CONCURRENT BITSET")
@@ -608,13 +608,13 @@ object test_localdipog_cbitset extends App {
   var v = 4
 
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.local_dipog_cbitset.start
+  import dipog.local_dipog_cbitset.localipog_bitset
   import enumerator.enumerator.localGenCombos2
 
   compressRuns = true
   var seed = System.nanoTime()
  // seed = 20
-  val tests = start(n, t, v, 100, 100000, "OC", seed)
+  val tests = localipog_bitset(n, t, v, 100, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
   println("Printing the tests....")
