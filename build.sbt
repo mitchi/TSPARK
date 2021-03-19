@@ -2,10 +2,11 @@ name := "TSPARK2"
 version := "0.2"
 scalaVersion := "2.12.10"
 
-scalacOptions ++= Seq(
-  "-opt:unreachable-code,simplify-jumps,compact-locals,copy-propagation,box-unbox,nullness-tracking,closure-invocations,inline"
-)
-
+//scalacOptions ++= Seq(
+//  "-opt:l:method",
+//  "-opt-warnings:at-inline-failed-summary",
+//  "-verbose",
+//)
 
 updateOptions := updateOptions.value.withCachedResolution(true)
 

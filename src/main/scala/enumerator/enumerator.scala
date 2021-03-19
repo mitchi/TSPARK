@@ -158,8 +158,6 @@ object enumerator extends Serializable
     combosArr.toArray
   }
 
-
-
   /**
     * Return only a chunk of combos
     */

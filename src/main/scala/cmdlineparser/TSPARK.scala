@@ -31,7 +31,6 @@ object TSPARK {
 
   //https://docs.scala-lang.org/tour/self-types.html
 
-
   object Phiwayparser extends Command(name = "phiway", description = "Phi-way testing from a list of clauses") with CommonOpt {
 
     var filename = arg[String](name = "clauses", description = "filename for the list of clauses")

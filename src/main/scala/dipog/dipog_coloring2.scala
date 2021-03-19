@@ -17,6 +17,7 @@ object dipog_coloring2 extends Serializable {
   var debug = false
   import cmdlineparser.TSPARK.save //Variable globale save, qui existe dans l'autre source file
 
+
   /**
     * Ici, on a la garantie que list est non-vide.
     *
