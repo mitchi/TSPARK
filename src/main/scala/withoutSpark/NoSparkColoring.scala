@@ -847,9 +847,9 @@ object testWithoutSpark extends App {
   println(s"Printing sc.conf : ${sc.getConf}")
   println(s"Printing boolean sc.islocal : ${sc.isLocal}")
 
-  var n = 8
-  var t = 7
-  var v = 4
+  var n = 3
+  var t = 2
+  var v = 2
 
   import cmdlineparser.TSPARK.compressRuns
 

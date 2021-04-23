@@ -14,6 +14,8 @@ import utils.utils
   * Si on a n sommets de graphe, on fait n itérations de coloration
   * Pour chaque itération de coloration, on utilise l'algorithme OX pour calculer le voisinage de chaque sommet.
   * On colorie ensuite comme d'habitude.
+ *
+ * Non terminé
   */
 
 object OrderColoring_OX extends Serializable {

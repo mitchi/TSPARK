@@ -1,12 +1,13 @@
-package phiwaycoloring
+package phiway
 
-import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
 import org.roaringbitmap.RoaringBitmap
-import roaringcoloring.roaring_coloring.{debug, _}
-import phiway.phiway._
+import roaringcoloring.roaring_coloring.ordercoloring
+
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
+import phiway._
 
 object phiway_coloring extends Serializable {
 
@@ -14,11 +15,11 @@ object phiway_coloring extends Serializable {
   var filename = "results.txt"
 
   /**
-    * Au lieu d'utiliser un paramètre v, on utilise la variable globale domainsizes
-    *
-    * @param vertices
-    * @return
-    */
+   * Au lieu d'utiliser un paramètre v, on utilise la variable globale domainsizes
+   *
+   * @param vertices
+   * @return
+   */
   def coloringToTests(vertices: RDD[(Int, clause)]): Array[String] = {
 
     //Transform clauses to a form proper for merging
@@ -39,18 +40,19 @@ object phiway_coloring extends Serializable {
 
 
   /**
-    * Is adjacent function for building graphs from a set of phiway clauses
-    *
-    * @param a
-    * @param b
-    * @return
-    */
+   * Is adjacent function for building graphs from a set of phiway clauses
+   *
+   * @param a
+   * @param b
+   * @return
+   */
   def isAdjacent(a: clause, b: clause): Boolean = {
     var i = 0
     var retValue = false
     val len = a.conds.length
 
     loop
+
     def loop(): Unit = {
 
       if (i == len) return
@@ -68,8 +70,8 @@ object phiway_coloring extends Serializable {
   }
 
   /**
-    * Roaring bitmaps, Phiway clauses
-    */
+   * Roaring bitmaps, Phiway clauses
+   */
 
   def genadjlist2(clauses: RDD[(clause, Long)],
                   clausesToColor: Array[(clause, Long)],
@@ -93,6 +95,7 @@ object phiway_coloring extends Serializable {
 
         //Go through all the clauses of the chunk
         loop;
+
         def loop(): Unit = {
           for (i <- someClauses) {
             val chunkClauseID = i._2
@@ -172,9 +175,9 @@ object phiway_coloring extends Serializable {
   }
 
   /**
-    * Roaring bitmaps, Phiway clauses
-    *
-    */
+   * Roaring bitmaps, Phiway clauses
+   *
+   */
 
   def genadjlist(i: Long, chunkSize: Long, clauses: RDD[(clause, Long)],
                  clausesToColor: Array[(clause, Long)], sc: SparkContext) = {
@@ -291,14 +294,14 @@ object phiway_coloring extends Serializable {
 
 
   /**
-    * Used to filter out combos or clauses so that we don't work with too many of them
-    * at the same time
-    *
-    * @param combos
-    * @param i
-    * @param step
-    * @return
-    */
+   * Used to filter out combos or clauses so that we don't work with too many of them
+   * at the same time
+   *
+   * @param combos
+   * @param i
+   * @param step
+   * @return
+   */
   def filterBig(combos: RDD[(clause, Long)], i: Int, step: Int):
   RDD[(clause, Long)] = {
     combos.flatMap(e => {
@@ -309,10 +312,10 @@ object phiway_coloring extends Serializable {
 
 
   /** We assign  numbers to the clauses. We make sure that the numbers are spread out over the partitions.
-    * Phiway coloring
-    *
-    * @param combos
-    */
+   * Phiway coloring
+   *
+   * @param combos
+   */
   def phiway_numberclauses(clauses: RDD[clause], sc: SparkContext) = {
 
     //Grab the number of combos per partition. Make it a map
@@ -390,14 +393,14 @@ object phiway_coloring extends Serializable {
 
 
   /**
-    * Phiway coloring
-    *
-    * @param combos the RDD of combos
-    * @param sc     SparkContext
-    * @param chunkSize the number of vertices to move at the same time.
-    * @param algorithm OrderColoring or Knights and Peasants
-    * @return
-    */
+   * Phiway coloring
+   *
+   * @param combos    the RDD of combos
+   * @param sc        SparkContext
+   * @param chunkSize the number of vertices to move at the same time.
+   * @param algorithm OrderColoring or Knights and Peasants
+   * @return
+   */
   def phiway_coloring(clauses: RDD[clause],
                       sc: SparkContext,
                       chunkSize: Int,
@@ -568,36 +571,16 @@ object phiway_coloring extends Serializable {
     coloringToTests(properFormRDD)
   }
 
-
-  /** Save test suite, Phiway version
-    *
-    * @param filename the name of the file
-    * @param tests    the test suite
-    */
-  def saveTestSuite(filename: String, tests: Array[String]): Unit = {
-    //Open file for writing
-    import java.io._
-    val pw = new PrintWriter(new FileOutputStream(filename, false))
-
-    //For all tests. Write them to the file
-    for (test <- tests) {
-      pw.append(s"$test\n")
-      pw.flush()
-    }
-    //Close the file
-    pw.close()
-  }
-
   /**
-    * The distributed graph coloring algorithm with roaring bitmaps and phiway coverage
-    * This function starts the whole process. It is called from the cmdline function
-    *
-    * @param n
-    * @param t
-    * @param v
-    * @param sc
-    * @return
-    */
+   * The distributed graph coloring algorithm with roaring bitmaps and phiway coverage
+   * This function starts the whole process. It is called from the cmdline function
+   *
+   * @param n
+   * @param t
+   * @param v
+   * @param sc
+   * @return
+   */
   def start_graphcoloring_phiway(clausesFile: String, t: Int = 0, sc: SparkContext,
                                  chunkSize: Int = 4000, algorithm: String = "OrderColoring"):
   Array[String] = {
@@ -659,4 +642,4 @@ object phiway_coloring extends Serializable {
   }
 
 
-} //fin object phiway_coloring
+}

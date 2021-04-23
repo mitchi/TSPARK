@@ -363,8 +363,8 @@ object TSPARK {
     import central.gen.{distributed_graphcoloring, simple_hypergraphcover, singlethreadcoloring, verifyTS}
     import ipog.d_ipog._
     import ipog.d_ipog_roaring.distributed_ipog_coloring_roaring
-    import phiway_hypergraph.phiway_hypergraph._
-    import phiwaycoloring.phiway_coloring._
+    import phiway.phiway_hypergraph._
+    import phiway.phiway_coloring._
     import utils.utils.print_combos_in_order
 
     choice match {

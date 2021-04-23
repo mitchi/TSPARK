@@ -1,19 +1,18 @@
 package phiway
 
-import enumerator.distributed_enumerator._
+import enumerator.distributed_enumerator.{generate_all_steps, generate_from_step}
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.rdd.RDD
 import org.roaringbitmap.RoaringBitmap
 
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 
 /**
-  * Phi-way testing supports graph coloring and hypergraph vertex covering.
-  * We input the Phi-way clauses using a file (1)
-  * Or by adding Phi-way clauses to clauses enumerated by interaction strength (2)
-  *
-  */
+ * Phi-way testing supports graph coloring and hypergraph vertex covering.
+ * We input the Phi-way clauses using a file (1)
+ * Or by adding Phi-way clauses to clauses enumerated by interaction strength (2)
+ *
+ */
 
 object phiway extends Serializable {
 
@@ -35,14 +34,33 @@ object phiway extends Serializable {
   }
 
 
+  /** Save test suite, Phiway version
+   *
+   * @param filename the name of the file
+   * @param tests    the test suite
+   */
+  def saveTestSuite(filename: String, tests: Array[String]): Unit = {
+    //Open file for writing
+    import java.io._
+    val pw = new PrintWriter(new FileOutputStream(filename, false))
+
+    //For all tests. Write them to the file
+    for (test <- tests) {
+      pw.append(s"$test\n")
+      pw.flush()
+    }
+    //Close the file
+    pw.close()
+  }
+
   /**
-    * Phi-way version.
-    * We copy the combinations inside a pv object, then we clone it.
-    *
-    * @param combinations
-    * @param indexes
-    * @param pv
-    */
+   * Phi-way version.
+   * We copy the combinations inside a pv object, then we clone it.
+   *
+   * @param combinations
+   * @param indexes
+   * @param pv
+   */
   def copycombinations(combinations: Array[Short],
                        indexes: ArrayBuffer[Int],
                        pv: Array[Short]): Unit = {
@@ -70,11 +88,11 @@ object phiway extends Serializable {
 
 
   /**
-    * Increment left. Phi-way version
-    *
-    * @param combinations
-    * @return
-    */
+   * Increment left. Phi-way version
+   *
+   * @param combinations
+   * @return
+   */
   def increment_left(combinations: Array[Short]): Boolean = {
     var i: Int = 0
     var theEnd = false //whether or not its over
@@ -111,12 +129,12 @@ object phiway extends Serializable {
 
 
   /**
-    * Create a new clause, from an array of shorts.
-    * -1 indicates that there is no parameter. Everything is is the value combination.
-    *
-    * @param shorts
-    * @return
-    */
+   * Create a new clause, from an array of shorts.
+   * -1 indicates that there is no parameter. Everything is is the value combination.
+   *
+   * @param shorts
+   * @return
+   */
   def makeNew(shorts: Array[Short]) = {
     //We create a new clause object
     val tmp: Array[booleanCondition] = shorts.map(num => {
@@ -128,13 +146,13 @@ object phiway extends Serializable {
 
 
   /** Main code to generate the value combinations from a paramater vector
-    *
-    * Algorithm : First we generate a small array called combinations. This is where we enumerate value combinations.
-    * Then, we iterate and store the indexes of the parameter vector.
-    * We store the value combination in the parameter vector. We clone the parameter vector and store the object in a return array.
-    * We generate the next value combination, and repeat this process until every value combo has been enumerated.
-    * We return the t-way combos at the end.
-    * */
+   *
+   * Algorithm : First we generate a small array called combinations. This is where we enumerate value combinations.
+   * Then, we iterate and store the indexes of the parameter vector.
+   * We store the value combination in the parameter vector. We clone the parameter vector and store the object in a return array.
+   * We generate the next value combination, and repeat this process until every value combo has been enumerated.
+   * We return the t-way combos at the end.
+   * */
   def generate_value_combinations(tab: Array[Char],
                                   t: Int): ArrayBuffer[clause] = {
 
@@ -171,17 +189,17 @@ object phiway extends Serializable {
 
 
   /**
-    * This is the Phi-way version of this function.
-    * This function generates Phi-way clauses using the interaction strength of a given problem.
-    * We rely on the domainSizes global variable for enumeration.
-    * These clauses can then be joined to the other clauses before solving a problem.
-    *
-    * @param n
-    * @param t
-    * @param v
-    * @param sc SparkContext
-    * @return RDD of combos
-    */
+   * This is the Phi-way version of this function.
+   * This function generates Phi-way clauses using the interaction strength of a given problem.
+   * We rely on the domainSizes global variable for enumeration.
+   * These clauses can then be joined to the other clauses before solving a problem.
+   *
+   * @param n
+   * @param t
+   * @param v
+   * @param sc SparkContext
+   * @return RDD of combos
+   */
   def fastGenClauses(t: Int, sc: SparkContext) = {
 
     val n = domainSizes.length
@@ -195,8 +213,8 @@ object phiway extends Serializable {
   }
 
   /**
-    * We take a reduced EOV clause, and produce a test with it
-    */
+   * We take a reduced EOV clause, and produce a test with it
+   */
   def EOVtoTest(a: clauseEOV): String = {
     var test = ""
     //On separe le test avec des ;
@@ -231,12 +249,12 @@ object phiway extends Serializable {
 
 
   /**
-    * Transform a clause to the new clause type
-    * We use the global domainSize variable.
-    *
-    * @param a
-    * @return
-    */
+   * Transform a clause to the new clause type
+   * We use the global domainSize variable.
+   *
+   * @param a
+   * @return
+   */
   def transformClause(a: clause): clauseEOV = {
     var accumulator = new ArrayBuffer[EnsembleOuValeur]()
 
@@ -249,11 +267,11 @@ object phiway extends Serializable {
   }
 
   /**
-    * Merge every condition inside the clauses. Return the final clause
-    *
-    * @param a
-    * @param b
-    */
+   * Merge every condition inside the clauses. Return the final clause
+   *
+   * @param a
+   * @param b
+   */
   def mergetwoclauses(a: clauseEOV, b: clauseEOV): clauseEOV = {
 
     val len = a.eovs.size
@@ -268,12 +286,12 @@ object phiway extends Serializable {
 
 
   /**
-    * Merge two conditions.
-    *
-    * @param a
-    * @param b
-    * @return
-    */
+   * Merge two conditions.
+   *
+   * @param a
+   * @param b
+   * @return
+   */
   def intersect_two(a: EnsembleOuValeur, b: EnsembleOuValeur): EnsembleOuValeur = {
 
     (a, b) match {
@@ -312,13 +330,13 @@ object phiway extends Serializable {
   }
 
   /**
-    * From a cond to an EnsembleOuValeur
-    * We use the global domainSize variable
-    *
-    * @param a   the boolean condition
-    * @param ith the ith parameter
-    * @return
-    */
+   * From a cond to an EnsembleOuValeur
+   * We use the global domainSize variable
+   *
+   * @param a   the boolean condition
+   * @param ith the ith parameter
+   * @return
+   */
   def condToEOV(aa: booleanCondition, ith: Int): EnsembleOuValeur = {
     if (aa.isInstanceOf[EmptyParam]) {
       return Rien()
@@ -377,7 +395,6 @@ object phiway extends Serializable {
     def apply(i: Int) = conds(i)
 
 
-
     override def toString: String = {
       var output = ""
       for (i <- conds) output += i.toString + " "
@@ -387,10 +404,10 @@ object phiway extends Serializable {
 
 
   /**
-    * Parse a clause into a booleanCond
-    *
-    * @param clause
-    */
+   * Parse a clause into a booleanCond
+   *
+   * @param clause
+   */
   def parseClause(clause: String): booleanCondition = {
 
 
@@ -421,23 +438,23 @@ object phiway extends Serializable {
   }
 
   /**
-    * The first line contains the domain sizes
-    * The line has the following structure: d1-d2-d3-d4-d4.
-    * With d1,d2 being domain sizes for parameters p1,p2 etc
-    *
-    * @param firstLine
-    */
+   * The first line contains the domain sizes
+   * The line has the following structure: d1-d2-d3-d4-d4.
+   * With d1,d2 being domain sizes for parameters p1,p2 etc
+   *
+   * @param firstLine
+   */
   def readDomainSizes(firstLine: String) = {
     val domainSizes = firstLine.split("-").map(_.toShort)
     domainSizes
   }
 
   /**
-    * In Phiway testing, the notion of testing strength is replaced with a set of boolean conditions
-    * on parameter values.
-    *
-    * @param filename
-    */
+   * In Phiway testing, the notion of testing strength is replaced with a set of boolean conditions
+   * on parameter values.
+   *
+   * @param filename
+   */
   def readPhiWayClauses(filename: String): Array[clause] = {
     var clauses = new ArrayBuffer[clause]()
 
@@ -478,11 +495,11 @@ object phiway extends Serializable {
   }
 
   /**
-    * Transform a t-way combo into a proper Phi-way object
-    *
-    * @param combo
-    * @return
-    */
+   * Transform a t-way combo into a proper Phi-way object
+   *
+   * @param combo
+   * @return
+   */
   def combo_to_phiway(combo: Array[Char]): booleanCond = {
     val combo2 = new booleanCond()
 
@@ -497,18 +514,18 @@ object phiway extends Serializable {
 
 
   /**
-    * This function answers the question: Are these two boolean conditions compatible, meaning that they can cohabit
-    * inside the same test.
-    *
-    * =5 and =5 is compatible
-    * =4 and =5 is not compatible
-    *
-    * <3 and <5 is compatible
-    * etc
-    *
-    * @param a
-    * @param b
-    */
+   * This function answers the question: Are these two boolean conditions compatible, meaning that they can cohabit
+   * inside the same test.
+   *
+   * =5 and =5 is compatible
+   * =4 and =5 is not compatible
+   *
+   * <3 and <5 is compatible
+   * etc
+   *
+   * @param a
+   * @param b
+   */
   def compatible(c1: booleanCondition, c2: booleanCondition): Boolean = {
     //If one of the two conditions is the EmptyParam we return false
     if (c1.isInstanceOf[EmptyParam] || c2.isInstanceOf[EmptyParam]) return true
@@ -620,21 +637,4 @@ object phiway extends Serializable {
     clauses2.foreach(println)
   }
 
-} //fin object phiway
-
-
-/*
-On gère deux formes de formule Phi-way. On gère une forme classique, et une forme non-classique?
-La forme classique : **01
-La forme nouvelle : ,,=0,=1
-D'autres versions de la forme nouvelle: ,,<5,<2
-D'autres versions : ,,!3,=2
-*/
-
-/**
-  * On transforme un combo en clause Phi-way
-  * Le combo ressemble
-  * [3;3;3;3]
-  *
-  *
-  */
+}

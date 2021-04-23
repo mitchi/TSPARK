@@ -1,30 +1,23 @@
-package phiway_hypergraph
-
-import central.gen.{filename, filter_combo, isComboHere}
-import hypergraph_cover.Algorithm2.progressive_filter_combo_string
-import hypergraph_cover.greedypicker.greedyPicker
-import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.{SparkConf, SparkContext}
+package phiway
+import central.gen.filename
 import org.apache.spark.rdd.RDD
-import utils.utils.{arrayToString, findTFromCombo, stringToArray}
-import phiway.phiway._
-import phiway.phiway.compatible
-import phiwaycoloring.phiway_coloring.saveTestSuite
-
+import org.apache.spark.{SparkConf, SparkContext}
+import phiway.clause
+import phiway._
 import scala.collection.mutable.ArrayBuffer
 
 object phiway_hypergraph extends Serializable {
 
 
   /**
-    * Compare two tests and return a score of difference.
-    * The idea here is that this function will help in SetCover functions to select tests that have more differences.
-    * The bigger the difference between two tests, the better it is.
-    *
-    * @param test1
-    * @param test2
-    * @return
-    */
+   * Compare two tests and return a score of difference.
+   * The idea here is that this function will help in SetCover functions to select tests that have more differences.
+   * The bigger the difference between two tests, the better it is.
+   *
+   * @param test1
+   * @param test2
+   * @return
+   */
   def differenceScore(test1: String, test2: String): Int = {
     var difference = 0
     for (i <- 0 until test1.size) {
@@ -34,16 +27,16 @@ object phiway_hypergraph extends Serializable {
   }
 
   /**
-    * This is a greedy algorithm for selecting good tests during the set cover algorithm
-    * We will select a number of tests that are equally good at covering combos.
-    * Then, we will compare the second test to the first test
-    * Then, the third test will be compared to the second and first test and so on.
-    *
-    * We will add a test if its difference with every other test is at least 50%
-    *
-    * Tester dans le futur : Ajouter le check de maxPicks dans cette fonction, au lieu d'envoyer un plus petit tableau
-    *
-    */
+   * This is a greedy algorithm for selecting good tests during the set cover algorithm
+   * We will select a number of tests that are equally good at covering combos.
+   * Then, we will compare the second test to the first test
+   * Then, the third test will be compared to the second and first test and so on.
+   *
+   * We will add a test if its difference with every other test is at least 50%
+   *
+   * Tester dans le futur : Ajouter le check de maxPicks dans cette fonction, au lieu d'envoyer un plus petit tableau
+   *
+   */
   def greedyPicker(tests: ArrayBuffer[String]): ArrayBuffer[String] = {
     var chosenTests = new ArrayBuffer[String]()
     chosenTests += tests(0) //choose the first test right away
@@ -89,19 +82,19 @@ object phiway_hypergraph extends Serializable {
 
 
   /**
-    * Compare a clause with a test.
-    * If the test covers the clause, we can delete this clause.
-    *
-    * We compare all the conditions.
-    * When one condition is not compatible, the whole thing is not compatible.
-    * If every condition is compatible, then we can filter out this clause
-    *
-    * @param combo
-    * @param test
-    * @param t
-    * @tparam A
-    * @return
-    */
+   * Compare a clause with a test.
+   * If the test covers the clause, we can delete this clause.
+   *
+   * We compare all the conditions.
+   * When one condition is not compatible, the whole thing is not compatible.
+   * If every condition is compatible, then we can filter out this clause
+   *
+   * @param combo
+   * @param test
+   * @param t
+   * @tparam A
+   * @return
+   */
   def isClauseHere(theClause: clause, test: String): Boolean = {
 
     var i = 0
@@ -111,6 +104,7 @@ object phiway_hypergraph extends Serializable {
     val values = test.split(";").map(s => s.toShort)
 
     loop;
+
     def loop(): Unit = {
       for (cond <- theClause.conds) {
         val cc = booleanCond('=', values(i))
@@ -128,8 +122,8 @@ object phiway_hypergraph extends Serializable {
 
 
   /**
-    * We filter out a clause using an array of tests
-    */
+   * We filter out a clause using an array of tests
+   */
   def filter_clause(myClause: clause,
                     tests: ArrayBuffer[String]): Boolean = {
 
@@ -138,6 +132,7 @@ object phiway_hypergraph extends Serializable {
     var returnValue = false
 
     loop;
+
     def loop(): Unit = {
       if (i == end) return
       if (isClauseHere(myClause, tests(i))) {
@@ -152,14 +147,14 @@ object phiway_hypergraph extends Serializable {
   }
 
   /**
-    * The problem with the filter combo technique is that it can be very slow when
-    * the test suite becomes very large.
-    * It is better to filter using a fixed number of tests at a time.
-    * Otherwise we will be testing the same combos multiple times.
-    *
-    * @param testSuite
-    * @param combos
-    */
+   * The problem with the filter combo technique is that it can be very slow when
+   * the test suite becomes very large.
+   * It is better to filter using a fixed number of tests at a time.
+   * Otherwise we will be testing the same combos multiple times.
+   *
+   * @param testSuite
+   * @param combos
+   */
   def progressive_filter(testSuite: ArrayBuffer[String],
                          clauses: RDD[clause],
                          sc: SparkContext,
@@ -170,6 +165,7 @@ object phiway_hypergraph extends Serializable {
     var filtered = clauses
 
     loop;
+
     def loop(): Unit = {
 
       val j = if (i + speed > testSuiteSize) testSuiteSize else i + speed
@@ -189,11 +185,11 @@ object phiway_hypergraph extends Serializable {
   }
 
   /**
-    * Manage the available domain for a parameter
-    *
-    * @param domain
-    * @param iterator
-    */
+   * Manage the available domain for a parameter
+   *
+   * @param domain
+   * @param iterator
+   */
   case class domainParam(domain: ArrayBuffer[Int], var iterator: Int = 0) {
 
     def printDomain: String = {
@@ -211,16 +207,16 @@ object phiway_hypergraph extends Serializable {
 
 
     /**
-      * Reset the domain size
-      */
+     * Reset the domain size
+     */
     def reset(): Unit = {
       iterator = 0
     }
 
     /**
-      * Increment the domain of the parameter using the iterator.
-      * Always use this function before the increment function
-      */
+     * Increment the domain of the parameter using the iterator.
+     * Always use this function before the increment function
+     */
     def tryIncrement(): Int = {
       //Case 1: If we increment, we go over the domain size
       if (iterator + 1 == domain.length) {
@@ -235,9 +231,9 @@ object phiway_hypergraph extends Serializable {
     }
 
     /**
-      * Go to the next element in the domain
-      * Or loop back to the first element
-      */
+     * Go to the next element in the domain
+     * Or loop back to the first element
+     */
     def increment(): Unit = {
       iterator += 1
     }
@@ -245,8 +241,8 @@ object phiway_hypergraph extends Serializable {
   }
 
   /**
-    * Manage the iteration over all domains
-    */
+   * Manage the iteration over all domains
+   */
   case class combinator(var domains: Array[domainParam]) {
 
     override def toString: String = {
@@ -265,8 +261,8 @@ object phiway_hypergraph extends Serializable {
 
 
     /**
-      * Generate the combinations
-      */
+     * Generate the combinations
+     */
     def generate() = {
       val tests = new ArrayBuffer[String]()
       var end = false
@@ -282,17 +278,18 @@ object phiway_hypergraph extends Serializable {
     }
 
     /**
-      * We try to increment the domains data structure to produce a new test.
-      * If we cannot increment any of the domains, we return that the end has been reached.
-      *
-      * @return
-      */
+     * We try to increment the domains data structure to produce a new test.
+     * If we cannot increment any of the domains, we return that the end has been reached.
+     *
+     * @return
+     */
     def increment_left(): Boolean = {
 
       var i = 0 //this iterator allows us to change to another parameter domain
       var theEnd = false //0 the end, 1 same parameter, 2 next parameter
 
       loop;
+
       def loop(): Unit = {
 
         //We have nowhere else to increment. Its over!
@@ -323,13 +320,13 @@ object phiway_hypergraph extends Serializable {
   } //fin class combinator
 
   /**
-    * Always tranform the boolean condition to a set.
-    * We use this with hypergraph vertex covering
-    *
-    * @param aa
-    * @param ith
-    * @return
-    */
+   * Always tranform the boolean condition to a set.
+   * We use this with hypergraph vertex covering
+   *
+   * @param aa
+   * @param ith
+   * @return
+   */
   def condToSET(aa: booleanCondition, ith: Int): ArrayBuffer[Int] = {
     var bitmap = new ArrayBuffer[Int]()
 
@@ -370,12 +367,12 @@ object phiway_hypergraph extends Serializable {
   }
 
   /**
-    * From a clause, we generate every possible test.
-    * Every time, we use the boolean conds to generate the appropriate domain of values.
-    * We also use the list of domain sizes for each parameter.
-    * This is a global variable.
-    *
-    */
+   * From a clause, we generate every possible test.
+   * Every time, we use the boolean conds to generate the appropriate domain of values.
+   * We also use the list of domain sizes for each parameter.
+   * This is a global variable.
+   *
+   */
   def clauseToTests(clause: clause) = {
 
     //On fait les bitmap compressées a partir des conditions de la clause
@@ -385,7 +382,7 @@ object phiway_hypergraph extends Serializable {
       ii += 1
       ret
     }).map(e => {
-      domainParam(e,0)
+      domainParam(e, 0)
     })
 
     val dd = combinator(domains)
@@ -395,17 +392,17 @@ object phiway_hypergraph extends Serializable {
 
 
   /**
-    * Greedy algorithm for hypergraph covering
-    * Every hyperedge is a phi-way clause.
-    * Every phiway clause votes for tests, every iteration
-    * The best tests are picked using an algorithm called greedypicker.
-    * The greedypicker algorithm picks a diverse set of tests.
-    *
-    * @param sc
-    * @param v
-    * @param rdd
-    * @return
-    */
+   * Greedy algorithm for hypergraph covering
+   * Every hyperedge is a phi-way clause.
+   * Every phiway clause votes for tests, every iteration
+   * The best tests are picked using an algorithm called greedypicker.
+   * The greedypicker algorithm picks a diverse set of tests.
+   *
+   * @param sc
+   * @param v
+   * @param rdd
+   * @return
+   */
   def greedyalgorithm(sc: SparkContext,
                       rdd: RDD[clause]): Array[String] = {
     //sc.setCheckpointDir(".") //not used when using local checkpoint
@@ -506,8 +503,8 @@ object phiway_hypergraph extends Serializable {
 
 
   /**
-    * Here we execute a simple setcover algorithm
-    */
+   * Here we execute a simple setcover algorithm
+   */
   def phiway_hypergraphcover(clausesFile: String, sc: SparkContext, t: Int = 0): Array[String] = {
 
     val clauses = readPhiWayClauses(clausesFile)
@@ -556,10 +553,10 @@ object phiway_hypergraph extends Serializable {
   }
 
   /**
-    * Petit test rapide de la génération des tests a partir des clauses
-    *
-    * @param args
-    */
+   * Petit test rapide de la génération des tests a partir des clauses
+   *
+   * @param args
+   */
   def main(args: Array[String]): Unit = {
 
     val conf = new SparkConf().setMaster("local[1]")
