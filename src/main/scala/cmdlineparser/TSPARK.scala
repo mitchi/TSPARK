@@ -1,6 +1,8 @@
 package cmdlineparser
 
 import cmdline.resume_info
+import dipog.local_dipog_cbitset.localipog_bitset
+import dipog.spark_dipog_bitset_parallecolorings.start_bitset_ncolorings
 import enumerator.distributed_enumerator.{fastGenCombos, generateParameterVectors, generateValueCombinations}
 import enumerator.enumerator.{localGenCombos, localGenCombos2, verify}
 import org.apache.spark.{SparkConf, SparkContext}
@@ -59,6 +61,7 @@ object TSPARK {
     var chunkSize = opt[Int](name = "chunksize", description = "Chunk size in vertices for graph coloring. Default is 20k", default = 20000)
     var hstep = opt[Int](name = "hstep", description = "Number of horizontal covering iterations. Default is 100", default = 100)
     var seed = opt[Long](name = "seed", description = "Enter the seed (LONG)", default = -1)
+    var numberColorings = opt[Int](name = "colorings", description = "Number of parallel colorings for vertical growth (default is 1", default = 1)
 
     var verify = opt[Boolean](name = "verify", abbrev = "v", description = "verify the test suite")
     var compressRuns = opt[Boolean](abbrev = "c", name = "compressRuns", description = "Activate run compression with Roaring Bitmaps", default = false)
@@ -370,8 +373,6 @@ object TSPARK {
     choice match {
 
       case Some(ExperimentalIPOG) => {
-
-        import dipog.local_dipog_cbitset.localipog_bitset
         import dipog.spark_dipog_bitset.start_bitset
         import dipog.spark_dipog_roaring.start
         import dipog.local_dipog_concurrent_propre.localipog_roaring
@@ -390,6 +391,8 @@ object TSPARK {
         var seed = ExperimentalIPOG.seed
         if (seed == -1) seed = System.nanoTime()
 
+        val numberColorings = ExperimentalIPOG.numberColorings
+
         val tt: Array[Array[Char]] = isLocal match {
           case true =>
             if (bitset == false) {
@@ -403,7 +406,13 @@ object TSPARK {
 
           case false =>
             val sc = createSparkContext()
-            if (bitset == false) {
+
+            if (numberColorings > 1 && bitset == true) {
+              println("Using Bitset + Parallel N Colorings")
+              start_bitset_ncolorings(n, t, v, sc, hstep, chunkSize, algorithm, seed, numberColorings)
+            }
+
+            else if (bitset == false) {
               println("Using Roaring Bitmaps...")
               start(n, t, v, sc, hstep, chunkSize, algorithm, seed)
             } else {
@@ -429,7 +438,7 @@ object TSPARK {
       //        }
 
 
-    //Implémentation de Fast Coloring
+    //Implémentation de Local Coloring
     case Some(LocalColoring) =>
     {
       import withoutSpark.NoSparkv6._
@@ -459,15 +468,12 @@ object TSPARK {
     case Some(FastColoring)
     =>
     {
-
       val sc = createSparkContext()
-
       import OXRoaring.RoaringOXColoring2._
 
       val n = FastColoring.n
       val t = FastColoring.t
       val v = FastColoring.v
-
       useKryo = FastColoring.kryo
 
       if (useKryo == true) {

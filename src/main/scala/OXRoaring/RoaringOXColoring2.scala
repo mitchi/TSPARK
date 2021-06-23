@@ -113,8 +113,6 @@ object RoaringOXColoring2 extends Serializable {
       etoiles = addTableauEtoiles(etoiles, someCombos, n, v)
 
       //On genere un RDD (Long, MutableRoaringBitmap). Il faut le sortir de la mémoire après aussi
-
-
       val r1 = generateadjlist(i, sizeOfChunk, combosNumbered, tableau, etoiles, sc).cache()
 
       val r2 = if (algorithm == "KP") {
@@ -131,14 +129,13 @@ object RoaringOXColoring2 extends Serializable {
         println(s"Time elapsed for Order Coloring: $time_elapsed seconds")
         a
       }
-
-      if (debug == true) {
-        println("On imprime le tableau des couleurs après coloriage du chunk par OrderColoring")
-        for (i <- 0 until colors.size) {
-          val v = colors(i)
-          println(s"vertex $i has color $v")
-        }
-      }
+//      if (debug == true) {
+//        println("On imprime le tableau des couleurs après coloriage du chunk par OrderColoring")
+//        for (i <- 0 until colors.size) {
+//          val v = colors(i)
+//          println(s"vertex $i has color $v")
+//        }
+//      }
 
       r1.unpersist(false)
 
@@ -157,12 +154,12 @@ object RoaringOXColoring2 extends Serializable {
     println(s"We did a total of $totalIterations iterations, which is $percent% of total")
     println(s"We also colored $vertexPerIteration vertices per iteration on average")
 
-    //Imprimer les couleurs
-    var jjj = 0
-    for (i <- colors) {
-      println(jjj + " " +  i)
-      jjj+=1
-    }
+//    //Imprimer les couleurs
+//    var jjj = 0
+//    for (i <- colors) {
+//      println(jjj + " " +  i)
+//      jjj+=1
+//    }
 
     //Create tests now
     val bcastcolors = sc.broadcast(colors)
@@ -175,10 +172,8 @@ object RoaringOXColoring2 extends Serializable {
     //Transform into tests
     val tests =  coloringToTests(properFormRDD)
     tests.foreach(println)
-
     (maxColor, tests)
   }
-
 
   /**
     * Generate the list of impossible combos by "investing" the list of possible combos,
@@ -654,7 +649,7 @@ object testRoaringOXColoring2 extends App {
   println(s"Printing boolean sc.islocal : ${sc.isLocal}")
   println("RoaringOXColoring2")
 
-  var n = 3
+  var n = 100
   var t = 2
   var v = 2
 

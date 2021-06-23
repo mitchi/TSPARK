@@ -2,7 +2,9 @@ package dipog
 
 import central.gen.isComboHere
 import com.acme.BitSet
+import dipog.local_dipog_cbitset.localipog_bitset
 import enumerator.enumerator.{genPartialCombos, growby1, localGenCombos2, verify}
+import org.apache.spark.{SparkConf, SparkContext}
 import utils.utils._
 
 import scala.collection.mutable.ArrayBuffer
@@ -270,12 +272,9 @@ object local_dipog_cbitset extends Serializable {
     * @param etoiles
     * @return
     */
-  def generateOtherList(list: BitSet,
-                        etoiles: BitSet, nTests: Int) = {
+  def generateOtherList(list: BitSet) = {
 
     var possiblyValidGuys = list.clone()
-   // possiblyValidGuys =  possiblyValidGuys | etoiles
-    possiblyValidGuys or etoiles
     possiblyValidGuys.notEverything()
 
     possiblyValidGuys
@@ -291,7 +290,9 @@ object local_dipog_cbitset extends Serializable {
     */
   def findValid(combo: Array[Char],
                 tableau: Array[Array[BitSet]],
-                etoiles: Array[BitSet], nTests: Int, nbrBits: Int) = {
+                etoiles: Array[BitSet],
+                nTests: Int,
+                nbrBits: Int) = {
 
     var i = 0 //quel paramètre?
     var certifiedInvalidGuys = BitSet(nbrBits)
@@ -303,8 +304,8 @@ object local_dipog_cbitset extends Serializable {
       if (it != '*') {
         val paramVal = it - '0'
         val list = tableau(i)(paramVal) //on prend tous les combos qui ont cette valeur. (Liste complète)
-        val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
-        val invalids = generateOtherList(list, listEtoiles, nTests)
+       // val listEtoiles = etoiles(i) //on va prendre tous les combos qui ont des etoiles pour ce parametre (Liste complète)
+        val invalids = generateOtherList(list)
         //certifiedInvalidGuys = certifiedInvalidGuys | invalids
         certifiedInvalidGuys or invalids
       } //fin du if pour le skip étoile
@@ -413,20 +414,20 @@ object local_dipog_cbitset extends Serializable {
       //val hashmappp = scala.collection.mutable.HashMap.empty[key_v, Int]
       val hashmappp = new java.util.concurrent.ConcurrentHashMap[key_v, Int]().asScala
 
-      newCombos.par.foreach(combo => {
+      newCombos.par.foreach(combo => { //on peut rajouter .par ici
         //val someTests = someTests_bcast.value
         var list = new ArrayBuffer[key_v]()
         val c = combo(0) //Get the version of the combo
 
         val t3 = System.nanoTime()
-        val valids = findValid(combo, tableau, etoiles, nTests, m)
+        val valids: Option[BitSet] = findValid(combo, tableau, etoiles, nTests, m)
         val t4 = System.nanoTime()
         if (valids.isDefined) {
           val it = valids.get.iterator
           small_loop; def small_loop(): Unit = {
             while (it.hasNext) {
               val elem = it.next()
-              if (elem >= m) return
+              if (elem >= m) return //Potentielle erreur ici?
               list += key_v(elem, c)
             }
           }
@@ -595,7 +596,6 @@ object local_dipog_cbitset extends Serializable {
     tests
   }
 
-
 }
 
 /**
@@ -603,7 +603,7 @@ object local_dipog_cbitset extends Serializable {
   */
 object test_localdipog_cbitset extends App {
 
-  var n = 8
+  var n = 10
   var t = 7
   var v = 4
 
@@ -622,9 +622,9 @@ object test_localdipog_cbitset extends App {
 
   println("\n\nVerifying test suite ... ")
   val combos = localGenCombos2(n, t, v, seed)
-  val answer = verify(tests, n, v, combos)
-  if (answer == true) println("Test suite is verified")
-  else println("Test suite is not verified")
+//  val answer = verify(tests, n, v, combos)
+//  if (answer == true) println("Test suite is verified")
+//  else println("Test suite is not verified")
 
 //  import central.gen.verifyTestSuite
 //  val conf = new SparkConf().setMaster("local[*]").setAppName("BitSet Spark test").set("spark.driver.maxResultSize", "10g")

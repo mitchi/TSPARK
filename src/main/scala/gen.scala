@@ -556,7 +556,10 @@ object gen extends Serializable {
       }
 
       //Delete combos using the new tests
-      newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500)
+      if (newTests.isEmpty == false) {
+        newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500)
+      }
+      else println("Theres a star for whom horizontal extension finds no combos")
 
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {
@@ -574,6 +577,7 @@ object gen extends Serializable {
 
         //Add the test, with a star
         if (found == false) {
+          println("Adding the test with a star...")
           val testMeat = someTests(i)
           val newTest = growby1(testMeat, '*')
           newTests += newTest

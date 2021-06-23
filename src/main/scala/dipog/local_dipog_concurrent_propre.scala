@@ -10,6 +10,7 @@ import scala.jdk.CollectionConverters._
 /**
   ** Cette version marche sans Apache Spark. Elle utilise également un graph coloring local
   *  Fonctionne plutot bien
+ *  Cette version utilise les RoaringBitmaps
   */
 
 object local_dipog_concurrent_propre extends Serializable {

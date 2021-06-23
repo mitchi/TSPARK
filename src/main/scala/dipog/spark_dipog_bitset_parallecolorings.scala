@@ -3,13 +3,15 @@ import central.gen.{isComboHere, verifyTestSuite}
 import cmdlineparser.TSPARK.resume
 import com.acme.BitSet
 import enumerator.distributed_enumerator.{fastGenCombos, genPartialCombos, growby1}
+import ordercoloring.OrderColoring.newTestsOrder
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 import utils.utils._
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
 
-object spark_dipog_bitset extends Serializable {
+object spark_dipog_bitset_parallecolorings extends Serializable {
   //Nom standard pour les résultats
   val filename = "results.txt"
   var debug = false
@@ -17,7 +19,7 @@ object spark_dipog_bitset extends Serializable {
 
   /**
   Version No-Spark de Filter Combo
-    */
+   */
   def filter_combo(combo: Array[Char], bv: Array[Array[Char]], t: Int): Boolean = {
 
     //Search all the broadcasted tests to see if the combo is there
@@ -42,12 +44,12 @@ object spark_dipog_bitset extends Serializable {
   }
 
   /**
-    * The problem with the filter combo technique is that it can be very slow when the test suite becomes very large.
-    * It is better to filter using a fixed number of tests at a time. Otherwise we will be testing the same combos multiple times.
-    *
-    * @param testSuite
-    * @param combos
-    */
+   * The problem with the filter combo technique is that it can be very slow when the test suite becomes very large.
+   * It is better to filter using a fixed number of tests at a time. Otherwise we will be testing the same combos multiple times.
+   *
+   * @param testSuite
+   * @param combos
+   */
   def progressive_filter_combo(testSuite: Array[Array[Char]], combos: Array[Array[Char]], speed: Int = 500): Array[Array[Char]] = {
     //Pick 1000 tests and filter the combos with them
     //Find out what the t value is
@@ -80,13 +82,13 @@ object spark_dipog_bitset extends Serializable {
 
 
   /**
-    * Ici, on a la garantie que list est non-vide.
-    *
-    * @param id
-    * @param list
-    * @param etoiles
-    * @return
-    */
+   * Ici, on a la garantie que list est non-vide.
+   *
+   * @param id
+   * @param list
+   * @param etoiles
+   * @return
+   */
   def generateOtherDelete(list: BitSet, numberTests: Long) = {
 
     var possiblyValidGuys = list.clone()
@@ -95,14 +97,14 @@ object spark_dipog_bitset extends Serializable {
   }
 
   /**
-    * Petit algorithme pour effacer plus rapidement les combos
-    *
-    * Bugfix: Pas le droit d'utiliser les étoiles du test pour delete des combos
-    *
-    * @param testSuite
-    * @param combos
-    * @return true if the test suite validates
-    */
+   * Petit algorithme pour effacer plus rapidement les combos
+   *
+   * Bugfix: Pas le droit d'utiliser les étoiles du test pour delete des combos
+   *
+   * @param testSuite
+   * @param combos
+   * @return true if the test suite validates
+   */
   def fastDeleteCombo(nouveauxTests: Array[Array[Char]], v: Int,
                       combos: RDD[Array[Char]], nbrBits: Int, sc : SparkContext): RDD[Array[Char]] = {
 
@@ -151,11 +153,11 @@ object spark_dipog_bitset extends Serializable {
   }
 
   /**
-    * On crée le tableau qu'on va utiliser.
-    * On skip les * lorsqu'on remplit ce tableau avec les valeurs
-    * Ce tableau se fait remplir avec chaque traitement de chunk.
-    *
-    * */
+   * On crée le tableau qu'on va utiliser.
+   * On skip les * lorsqu'on remplit ce tableau avec les valeurs
+   * Ce tableau se fait remplir avec chaque traitement de chunk.
+   *
+   * */
   def initTableau(n: Int, v: Int, nbrBits: Int) = {
     var tableau = new Array[Array[BitSet]](n)
 
@@ -170,9 +172,9 @@ object spark_dipog_bitset extends Serializable {
   }
 
   /**
-    * On crée un tableau pour gérer seulement les étoiles
-    * Roaring Bitmap dans le tableau
-    */
+   * On crée un tableau pour gérer seulement les étoiles
+   * Roaring Bitmap dans le tableau
+   */
   def initTableauEtoiles(n: Int, nbrBits: Int) = {
     var tableauEtoiles = new Array[BitSet](n)
 
@@ -185,18 +187,18 @@ object spark_dipog_bitset extends Serializable {
 
 
   /**
-    * Fast cover using the OX algorithm
-    *
-    * Ici, on a la situation suivante:
-    *
-    * On a un grand nombre de tests qui doivent être étendus de 1 paramètre.
-    * On doit donc faire un grand nombre de comparaisons avec nos combos, pour trouver les tests qui sont compatibles avec eux.
-    *
-    * Ici, on va utiliser remplacer ces comparaisons de STRING par l'algorithme OX.
-    * Donc, au lieu d'avoir combo X nbrTests comparaisons pour chaque combo, on va avoir combo + temps OX
-    * Ce qui est largement mieux
-    *
-    */
+   * Fast cover using the OX algorithm
+   *
+   * Ici, on a la situation suivante:
+   *
+   * On a un grand nombre de tests qui doivent être étendus de 1 paramètre.
+   * On doit donc faire un grand nombre de comparaisons avec nos combos, pour trouver les tests qui sont compatibles avec eux.
+   *
+   * Ici, on va utiliser remplacer ces comparaisons de STRING par l'algorithme OX.
+   * Donc, au lieu d'avoir combo X nbrTests comparaisons pour chaque combo, on va avoir combo + temps OX
+   * Ce qui est largement mieux
+   *
+   */
   def genTables(someTests: Array[Array[Char]], n: Int, v: Int, nbrBits: Int) = {
     val tableau: Array[Array[BitSet]] = initTableau(n, v, nbrBits)
     val etoiles: Array[BitSet] = initTableauEtoiles(n, nbrBits)
@@ -231,13 +233,13 @@ object spark_dipog_bitset extends Serializable {
 
 
   /**
-    * On recoit un tableau, et on ajoute l'information avec le chunk de combos
-    * On ajoute sans cesse dans le tableau
-    *
-    * @param chunk
-    * @param n
-    * @param v
-    */
+   * On recoit un tableau, et on ajoute l'information avec le chunk de combos
+   * On ajoute sans cesse dans le tableau
+   *
+   * @param chunk
+   * @param n
+   * @param v
+   */
   def addToTableau(tableau: Array[Array[BitSet]],
                    chunk: Array[(Array[Char], Long)], n: Int, v: Int) = {
 
@@ -257,13 +259,13 @@ object spark_dipog_bitset extends Serializable {
   }
 
   /**
-    * Ici, on a la garantie que list est non-vide.
-    *
-    * @param id
-    * @param list
-    * @param etoiles
-    * @return
-    */
+   * Ici, on a la garantie que list est non-vide.
+   *
+   * @param id
+   * @param list
+   * @param etoiles
+   * @return
+   */
   def generateOtherList(list: BitSet) = {
 
     var possiblyValidGuys = list.clone()
@@ -272,11 +274,11 @@ object spark_dipog_bitset extends Serializable {
   }
 
   /**
-    *
-    * @param combo
-    * @param tableau
-    * @param etoiles
-    */
+   *
+   * @param combo
+   * @param tableau
+   * @param etoiles
+   */
   def findValid(combo: Array[Char],
                 tableau: Array[Array[BitSet]],
                 etoiles: Array[BitSet], nTests: Int, nbrBits: Int) = {
@@ -308,13 +310,29 @@ object spark_dipog_bitset extends Serializable {
     }
   }
 
+
+  /** Take the tests, and a sequence, and return a new series of tests in order.
+   * This is used with the algorithm called OrderColoring
+   *
+   * @param sequence
+   * @param tests
+   * @return
+   */
+  def newTestsOrder(sequence: ArrayBuffer[Int], tests: Array[Array[Char]]): Array[Array[Char]] = {
+    var newTests = tests.clone()
+    for (i <- 0 until newTests.size) {
+      newTests(i) = tests(sequence(i))
+    }
+    newTests
+  }
+
   /**
-    * On utilise cette fonction pour faire le pont entre la phase de Horizontal Growth, et la phase de Vertical Growth
-    *
-    * @param tests
-    * @return
-    */
-  def entergraphcoloring(tests: Array[Array[Char]], combos: Array[Array[Char]], n: Int, v: Int): Array[Array[Char]] = {
+   * On utilise cette fonction pour faire le pont entre la phase de Horizontal Growth, et la phase de Vertical Growth
+   *
+   * @param tests
+   * @return
+   */
+  def entergraphcoloring(tests: Array[Array[Char]], combos: Array[Array[Char]], v: Int, numberColorings : Int = 800, sc : SparkContext): Array[Array[Char]] = {
 
     import withoutSpark.NoSparkv6.graphcoloring
 
@@ -335,23 +353,49 @@ object spark_dipog_bitset extends Serializable {
     })
 
     var input = combos union incompleteTests
-    var coloredTests = graphcoloring(input, v)._1
+    var count = input.size
+
+    //Generate a random sequence, then execute the graph coloring algorithm
+    val r3 = sc.makeRDD(1 to numberColorings, numberColorings).mapPartitionsWithIndex((index, it) => {
+      var sequence: ArrayBuffer[Int] = new ArrayBuffer[Int]()
+      for (i <- 0 until count.toInt) sequence += i
+      Random.setSeed(System.nanoTime() + index.toLong)
+      sequence = Random.shuffle(sequence)
+      Iterator(newTestsOrder(sequence, input))
+    })
+
+   val r4 =  r3.map( tests => {
+      var result = graphcoloring(tests,v)
+     (result._2, tests)
+    })
+
+    var cptColoring = 0
+    val debug = r4.collect().foreach( e => {
+      println(s"Coloring $cptColoring: ${e._1} colors")
+      cptColoring +=1
+    })
+
+    //On garde la plus petite suite de tests
+    val r5 = r4.reduce( (a,b) => {
+        if (a._1 < b._1) a
+        else b
+    })
+
+    val coloredTests = r5._2
     coloredTests ++ testsWithoutStars
   }
 
-
-
   /**
-    *
-    * Ici, on applique notre algorithme de Horizontal Growth pour D-IPOG-Coloring
-    *
-    * @param tests
-    * @param combos
-    * @param v
-    * @param t
-    * @param sc
-    * @return
-    */
+   *
+   * Ici, on applique notre algorithme de Horizontal Growth pour D-IPOG-Coloring
+   *
+   * @param tests
+   * @param combos
+   * @param v
+   * @param t
+   * @param sc
+   * @return
+   */
   def horizontalgrowth(tests: Array[Array[Char]], combos: RDD[Array[Char]],
                        v: Int, t: Int,
                        sc: SparkContext, hstep: Int = 100):
@@ -497,23 +541,22 @@ object spark_dipog_bitset extends Serializable {
   } //fin fonction horizontal growth 1 percent old
 
   /**
-    * A hybrid IPOG (Distributed Horizontal Growth + Distributed Graph Coloring) that covers M tests at a time during set cover.
-    * M value is determined at runtime.
-    *
-    * @param n
-    * @param t
-    * @param v
-    * @param sc
-    * @return
-    */
-  def start_bitset(n: Int, t: Int, v: Int, sc: SparkContext,
+   * A hybrid IPOG (Distributed Horizontal Growth + Distributed Graph Coloring) that covers M tests at a time during set cover.
+   * M value is determined at runtime.
+   *
+   * @param n
+   * @param t
+   * @param v
+   * @param sc
+   * @return
+   */
+  def start_bitset_ncolorings(n: Int, t: Int, v: Int, sc: SparkContext,
                    hstep: Int = 100,
-                   chunksize: Int = 20000, algorithm: String = "OC", seed: Long): Array[Array[Char]] = {
+                   chunksize: Int = 20000, algorithm: String = "OC", seed: Long, numberColorings: Int = 800): Array[Array[Char]] = {
 
     val expected = numberTWAYCombos(n, t, v)
-    println("Distributed IPOG Coloring")
-    println("Using Roaring Bitmaps + OFLIP algorithm in Horizontal Growth")
-    println("Using OFLIP + Roaring Bitmaps + Order Coloring in Graph Coloring")
+    println("EXPERIMENTAL N COLORINGS")
+    println(s"Using $numberColorings colorings....")
     println(s"Graph coloring chunk size: $chunksize vertices")
     println(s"Seed: $seed")
     println(s"Horizontal growth in $hstep iterations")
@@ -574,7 +617,10 @@ object spark_dipog_bitset extends Serializable {
 
       //If there are still combos left to cover, apply a vertical growth algorithm
       if (newCombos.isEmpty() == false) {
-        tests = entergraphcoloring(tests, newCombos.collect(), n, v)
+        import central.gen.updateTestColoring
+        println("Performing 800 small graph colorings...")
+        //tests = updateTestColoring(tests, newCombos, sc, v, 800)
+        tests = entergraphcoloring(tests, newCombos.collect(), v, numberColorings, sc)
       }
 
       i += 1 //move to another parameter
@@ -584,8 +630,8 @@ object spark_dipog_bitset extends Serializable {
       var t2 = System.nanoTime()
       var time_elapsed = (t2 - t1).toDouble / 1000000000
 
-      pw.append(s"$t;${i + t};$v;DIPOG_COLORING_ROARING;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
-      println(s"$t;${i + t};$v;DIPOG_COLORING_ROARING;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
+      pw.append(s"$t;${i + t};$v;EXPERIMENTAL_NCOLORINGS;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
+      println(s"$t;${i + t};$v;EXPERIMENTAL_NCOLORINGS;seed=$seed;hstep=$hstep;$time_elapsed;${tests.size}\n")
       pw.flush()
 
       //If the option to save to a text file is activated
@@ -606,9 +652,9 @@ object spark_dipog_bitset extends Serializable {
 }
 
 /**
-  * Petit objet pour tester cet algorithme, rien de trop compliqué
-  */
-object test_spark_dipog_bitset extends App {
+ * Petit objet pour tester cet algorithme, rien de trop compliqué
+ */
+object test_spark_dipog_bitset_ncolorings extends App {
 
   val conf = new SparkConf().setMaster("local[*]").
     setAppName("DIPOG COLORING RELEASE ")
@@ -617,15 +663,15 @@ object test_spark_dipog_bitset extends App {
 
   sc.setLogLevel("OFF")
 
-  var n = 100
-  var t = 2
-  var v = 2
+  var n = 9
+  var t = 7
+  var v = 4
   import cmdlineparser.TSPARK.compressRuns
-  import dipog.spark_dipog_bitset.start_bitset
+  import dipog.spark_dipog_bitset_parallecolorings.start_bitset_ncolorings
   val seed = System.nanoTime()
 
   compressRuns = true
-  val tests = start_bitset(n, t, v, sc, 100, 100000, "OC", seed)
+  val tests = start_bitset_ncolorings(n, t, v, sc, 100, 100000, "OC", seed)
 
   println("We have " + tests.size + " tests")
   //  println("Printing the tests....")

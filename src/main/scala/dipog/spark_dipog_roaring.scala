@@ -1,5 +1,5 @@
 package dipog
-import central.gen.verifyTestSuite
+import central.gen.{progressive_filter_combo, verifyTestSuite}
 import cmdlineparser.TSPARK.resume
 import enumerator.distributed_enumerator.{fastGenCombos, genPartialCombos, growby1}
 import org.apache.spark.rdd.RDD
@@ -223,6 +223,8 @@ object spark_dipog_roaring extends Serializable {
       else None
     })
 
+    println("Number of incomplete tests " + incompleteTests.size)
+
     //Do the contrary here. Remove those we have just added from the original test set. This could be more optimal but would need custom code I guess.
     var testsWithoutStars = tests.flatMap(arr => {
       if (containsStars(arr) == true) {
@@ -232,6 +234,7 @@ object spark_dipog_roaring extends Serializable {
     })
 
     var input = combos union incompleteTests
+    println("Number of graph nodes sent to Graph Coloring: " + input.size)
     var coloredTests = graphcoloring(input, v)._1
     coloredTests ++ testsWithoutStars
   }
@@ -270,6 +273,8 @@ object spark_dipog_roaring extends Serializable {
     var m = tests.size / hstep
     if (m < 1) m = 1
     var i = 0 //for each test
+
+    println(s"Value of M: $m")
 
 
     loop2 //go into the main loop
@@ -357,9 +362,12 @@ object spark_dipog_roaring extends Serializable {
       }
 
       //Todo: ajouter la version plus rapide
-      //newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500).localCheckpoint()
-      newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc)
-      newCombos.localCheckpoint()
+
+      if (newTests.isEmpty == false) {
+        newCombos = progressive_filter_combo(newTests.toArray, newCombos, sc, 500)
+        //newCombos = fastDeleteCombo(newTests.toArray, v, newCombos, sc)
+        newCombos.localCheckpoint()
+      }
 
       //Build a list of tests that did not cover combos
       for (i <- 0 until someTests.size) {
@@ -377,6 +385,7 @@ object spark_dipog_roaring extends Serializable {
 
         //Add the test, with a star
         if (found == false) {
+          println("Adding a test with a star...")
           val testMeat = someTests(i)
           val newTest = growby1(testMeat, '*')
           newTests += newTest
@@ -512,9 +521,9 @@ object test_spark_dipog_roaring extends App {
 
   sc.setLogLevel("OFF")
 
-  var n = 8
-  var t = 7
-  var v = 3
+  var n = 100
+  var t = 2
+  var v = 2
   import cmdlineparser.TSPARK.compressRuns
   import dipog.spark_dipog_roaring.start
   val seed = System.nanoTime()
@@ -523,8 +532,8 @@ object test_spark_dipog_roaring extends App {
   val tests = start(n, t, v, sc, 100, 100000, "OC", seed)
 
    println("We have " + tests.size + " tests")
-  //  println("Printing the tests....")
-  //  tests foreach (print_helper(_))
+    println("Printing the tests....")
+    tests foreach (print_helper(_))
 
   //J'utilise pas le fast verify pour le moment
   println("\n\nVerifying test suite ... ")
